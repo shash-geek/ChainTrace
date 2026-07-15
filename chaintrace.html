@@ -1,0 +1,1515 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8"/><meta name="viewport" content="width=device-width,initial-scale=1.0"/>
+<title>ChainTrace — Blockchain OSINT Visualizer</title>
+<script src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
+<script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
+<script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/cytoscape/3.26.0/cytoscape.min.js"></script>
+<link href="https://fonts.googleapis.com/css2?family=Space+Mono:wght@400;700&family=Syne:wght@400;600;700;800&display=swap" rel="stylesheet"/>
+<style>
+*{box-sizing:border-box;margin:0;padding:0}
+:root{
+  --bg:#020810;--surface:#070f1d;--surface2:#0b1628;--border:#0f2035;
+  --accent:#00e5ff;--accent2:#7c3aed;--warn:#f59e0b;--danger:#ef4444;--success:#00ff88;
+  --text:#d4e8ff;--muted:#3d6080;--font-head:'Syne',sans-serif;--font-mono:'Space Mono',monospace;
+}
+body{background:var(--bg);color:var(--text);font-family:var(--font-mono);overflow-x:hidden;cursor:default}
+::-webkit-scrollbar{width:3px}::-webkit-scrollbar-track{background:var(--bg)}::-webkit-scrollbar-thumb{background:#0f3050;border-radius:2px}
+@keyframes pulse{0%,100%{opacity:1}50%{opacity:.35}}
+@keyframes fadeIn{from{opacity:0;transform:translateY(14px)}to{opacity:1;transform:none}}
+@keyframes fadeInFast{from{opacity:0;transform:translateY(4px)}to{opacity:1;transform:none}}
+@keyframes spin{to{transform:rotate(360deg)}}
+@keyframes slideIn{from{opacity:0;transform:translateX(12px)}to{opacity:1;transform:none}}
+@keyframes slideShine{0%{left:-80px}100%{left:120%}}
+@keyframes scanLine{0%{top:-2px;opacity:.8}100%{top:100vh;opacity:0}}
+@keyframes rippleOut{0%{transform:scale(1);opacity:.6}100%{transform:scale(3.5);opacity:0}}
+@keyframes nodeAppear{0%{opacity:0;transform:scale(0.4)}100%{opacity:1;transform:scale(1)}}
+@keyframes borderFlow{0%{background-position:0% 50%}100%{background-position:200% 50%}}
+@keyframes glowPulse{0%,100%{box-shadow:0 0 6px #00e5ff30,inset 0 0 6px #00e5ff08}50%{box-shadow:0 0 20px #00e5ff60,inset 0 0 12px #00e5ff15}}
+@keyframes textGlow{0%,100%{text-shadow:0 0 10px #00e5ff50}50%{text-shadow:0 0 30px #00e5ff,0 0 60px #00e5ff60}}
+@keyframes datastream{0%{stroke-dashoffset:200}100%{stroke-dashoffset:0}}
+.fade-in{animation:fadeIn .45s ease both}
+.fade-fast{animation:fadeInFast .2s ease both}
+.pulse{animation:pulse 2s ease infinite}
+/* Canvas background */
+#chain-bg{position:fixed;inset:0;z-index:0;pointer-events:none}
+/* App layer */
+.app{position:relative;z-index:2;min-height:100vh;display:flex;flex-direction:column}
+/* Navbar */
+.navbar{
+  display:flex;align-items:center;justify-content:space-between;
+  padding:12px 32px;border-bottom:1px solid rgba(0,229,255,.08);
+  background:rgba(2,8,16,.88);backdrop-filter:blur(24px);
+  position:sticky;top:0;z-index:100;
+}
+.logo{font-family:var(--font-head);font-weight:800;font-size:22px;color:#fff;letter-spacing:-1px;display:flex;align-items:center;gap:10px;cursor:pointer;user-select:none}
+.logo-icon{position:relative;width:28px;height:28px;display:flex;align-items:center;justify-content:center}
+.logo-hex{width:24px;height:24px;background:var(--accent);clip-path:polygon(50% 0%,100% 25%,100% 75%,50% 100%,0% 75%,0% 25%);transition:all .3s;box-shadow:0 0 16px var(--accent)}
+.logo:hover .logo-hex{transform:rotate(30deg) scale(1.2);box-shadow:0 0 30px var(--accent)}
+.logo-ring{position:absolute;inset:-3px;border:1px solid rgba(0,229,255,.4);clip-path:polygon(50% 0%,100% 25%,100% 75%,50% 100%,0% 75%,0% 25%);animation:pulse 3s ease infinite}
+.nav-links{display:flex;gap:20px;font-size:11px}
+.nav-links a{cursor:pointer;transition:all .25s;text-decoration:none;color:var(--muted);letter-spacing:1px;position:relative;padding:4px 0}
+.nav-links a::after{content:'';position:absolute;bottom:0;left:0;right:0;height:1px;background:linear-gradient(90deg,transparent,var(--accent),transparent);transform:scaleX(0);transition:transform .3s}
+.nav-links a:hover{color:var(--accent)}
+.nav-links a:hover::after{transform:scaleX(1)}
+.nav-links a.active-page{color:var(--accent)}
+.nav-links a.active-page::after{transform:scaleX(1)}
+.nav-right{display:flex;align-items:center;gap:14px}
+.nav-badge{background:rgba(0,229,255,.06);border:1px solid rgba(0,229,255,.2);color:var(--accent);font-size:9px;padding:3px 10px;letter-spacing:2px}
+.live-pill{display:flex;align-items:center;gap:5px;font-size:9px;color:var(--success);letter-spacing:1px}
+.live-dot{width:5px;height:5px;background:var(--success);border-radius:50%;box-shadow:0 0 6px var(--success);animation:pulse 1.5s ease infinite}
+/* Hero */
+.hero{min-height:92vh;display:flex;flex-direction:column;align-items:center;justify-content:center;text-align:center;position:relative;padding:60px 20px;overflow:hidden}
+.hero-overlay{position:absolute;inset:0;background:radial-gradient(ellipse 70% 55% at 50% 10%,rgba(0,229,255,.055) 0%,transparent 65%),radial-gradient(ellipse 40% 30% at 80% 80%,rgba(124,58,237,.04) 0%,transparent 60%);pointer-events:none}
+.hero-scan{position:absolute;left:0;right:0;height:1px;background:linear-gradient(90deg,transparent 5%,rgba(0,229,255,.6) 50%,transparent 95%);animation:scanLine 5s linear infinite;pointer-events:none;filter:blur(.5px)}
+.hero-tag{
+  background:rgba(0,229,255,.06);border:1px solid rgba(0,229,255,.2);
+  color:var(--accent);font-size:10px;padding:6px 18px;letter-spacing:3px;
+  margin-bottom:32px;display:inline-block;cursor:default;
+  transition:all .3s;position:relative;overflow:hidden;
+}
+.hero-tag::before{content:'';position:absolute;inset:0;background:linear-gradient(90deg,transparent,rgba(0,229,255,.12),transparent);transform:translateX(-100%);transition:transform .6s}
+.hero-tag:hover{background:rgba(0,229,255,.12);box-shadow:0 0 30px rgba(0,229,255,.25),inset 0 0 20px rgba(0,229,255,.06)}
+.hero-tag:hover::before{transform:translateX(100%)}
+.hero h1{font-family:var(--font-head);font-size:clamp(46px,8vw,94px);font-weight:800;line-height:.95;letter-spacing:-4px;color:#fff;margin-bottom:22px}
+.hero h1 .accent-word{color:var(--accent);animation:textGlow 4s ease infinite}
+.hero p{font-size:14px;color:var(--muted);max-width:540px;line-height:2;margin-bottom:44px}
+.btn-primary{
+  background:var(--accent);color:#000;font-family:var(--font-mono);font-size:12px;font-weight:700;
+  padding:14px 32px;border:none;cursor:pointer;letter-spacing:1.5px;
+  transition:all .25s;position:relative;overflow:hidden;display:inline-flex;align-items:center;gap:8px;
+}
+.btn-primary::before{content:'';position:absolute;inset:0;background:linear-gradient(90deg,transparent,rgba(255,255,255,.3),transparent);transform:translateX(-100%)}
+.btn-primary:hover::before{transition:transform .5s;transform:translateX(100%)}
+.btn-primary:hover{background:#00f5ff;transform:translateY(-3px);box-shadow:0 0 40px rgba(0,229,255,.5),0 8px 30px rgba(0,0,0,.4)}
+.btn-primary:active{transform:translateY(-1px)}
+.btn-secondary{
+  background:transparent;color:var(--text);font-family:var(--font-mono);font-size:12px;
+  padding:14px 32px;border:1px solid rgba(0,229,255,.2);cursor:pointer;letter-spacing:1.5px;
+  transition:all .25s;position:relative;overflow:hidden;
+}
+.btn-secondary:hover{border-color:rgba(0,229,255,.5);color:var(--accent);box-shadow:0 0 30px rgba(0,229,255,.15);transform:translateY(-2px)}
+.btn-secondary:active{transform:translateY(0)}
+.hero-btns{display:flex;gap:14px;flex-wrap:wrap;justify-content:center;margin-bottom:64px}
+.hero-stats{display:flex;gap:0;border:1px solid rgba(0,229,255,.1);background:rgba(0,229,255,.02)}
+.stat{text-align:center;padding:24px 40px;cursor:default;transition:all .3s;border-right:1px solid rgba(0,229,255,.08);position:relative;overflow:hidden}
+.stat:last-child{border-right:none}
+.stat::before{content:'';position:absolute;inset:0;background:rgba(0,229,255,.0);transition:background .3s}
+.stat:hover::before{background:rgba(0,229,255,.04)}
+.stat:hover{transform:translateY(-2px)}
+.stat-num{font-family:var(--font-head);font-size:26px;font-weight:800;color:var(--accent);transition:all .3s}
+.stat:hover .stat-num{text-shadow:0 0 20px var(--accent);transform:scale(1.05)}
+.stat-label{font-size:9px;color:var(--muted);letter-spacing:2px;margin-top:4px}
+/* Feature cards */
+.section{padding:80px 40px;max-width:1200px;margin:0 auto;width:100%}
+.section-tag{font-size:9px;letter-spacing:3px;color:var(--accent);margin-bottom:14px}
+.section-title{font-family:var(--font-head);font-size:38px;font-weight:800;letter-spacing:-1.5px;color:#fff;margin-bottom:16px}
+.section-sub{font-size:13px;color:var(--muted);line-height:1.9;max-width:520px}
+.features-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(270px,1fr));gap:1px;margin-top:48px;border:1px solid rgba(0,229,255,.08)}
+.feature-card{
+  background:rgba(7,15,29,.9);padding:32px;position:relative;overflow:hidden;
+  transition:all .35s;cursor:default;border:none;
+}
+.feature-card:hover{background:rgba(0,229,255,.04);transform:translateY(-2px)}
+.feature-card::before{content:'';position:absolute;top:0;left:0;right:0;height:1px;background:linear-gradient(90deg,transparent,var(--accent),transparent);opacity:0;transition:opacity .3s}
+.feature-card:hover::before{opacity:1}
+.feature-card::after{content:'';position:absolute;top:0;left:0;bottom:0;width:1px;background:linear-gradient(180deg,transparent,var(--accent),transparent);opacity:0;transition:opacity .35s}
+.feature-card:hover::after{opacity:.6}
+.feature-icon{font-size:28px;margin-bottom:18px;display:block;transition:transform .4s;filter:grayscale(.2)}
+.feature-card:hover .feature-icon{transform:scale(1.15) rotate(-5deg);filter:grayscale(0)}
+.feature-title{font-family:var(--font-head);font-size:15px;font-weight:700;color:#fff;margin-bottom:10px;transition:color .2s}
+.feature-card:hover .feature-title{color:var(--accent)}
+.feature-desc{font-size:11px;color:var(--muted);line-height:1.9}
+/* Workflow */
+.workflow-wrap{display:flex;gap:0;margin-top:48px;position:relative;border:1px solid rgba(0,229,255,.08)}
+.workflow-step{flex:1;text-align:center;padding:32px 12px;position:relative;cursor:default;transition:all .3s;overflow:hidden}
+.workflow-step::after{content:'';position:absolute;top:0;bottom:0;right:0;width:1px;background:rgba(0,229,255,.08)}
+.workflow-step:last-child::after{display:none}
+.workflow-step:hover{background:rgba(0,229,255,.04)}
+.workflow-step::before{content:'';position:absolute;top:0;left:0;right:0;height:2px;background:linear-gradient(90deg,transparent,var(--accent),transparent);opacity:0;transition:opacity .3s}
+.workflow-step:hover::before{opacity:1}
+.step-num{width:44px;height:44px;border:1px solid rgba(0,229,255,.2);display:flex;align-items:center;justify-content:center;margin:0 auto 16px;font-family:var(--font-head);font-weight:800;font-size:16px;color:var(--accent);position:relative;z-index:1;transition:all .3s;background:rgba(0,229,255,.04)}
+.workflow-step:hover .step-num{background:var(--accent);color:#000;border-color:var(--accent);box-shadow:0 0 20px rgba(0,229,255,.5)}
+.step-lbl{font-size:10px;color:var(--muted);font-family:var(--font-head);font-weight:600;letter-spacing:.5px;transition:color .2s}
+.workflow-step:hover .step-lbl{color:var(--accent)}
+/* Dashboard */
+.dashboard{display:grid;grid-template-columns:310px 1fr;min-height:calc(100vh - 57px);position:relative}
+.sidebar{background:rgba(4,10,20,.95);border-right:1px solid rgba(0,229,255,.06);padding:20px;display:flex;flex-direction:column;gap:14px;overflow-y:auto;max-height:calc(100vh - 57px);backdrop-filter:blur(20px)}
+.main-panel{padding:22px;overflow-y:auto;display:flex;flex-direction:column;gap:18px;max-height:calc(100vh - 57px);background:rgba(2,8,16,.6)}
+/* Cards */
+.card{background:rgba(7,15,29,.92);border:1px solid rgba(0,229,255,.07);padding:18px;backdrop-filter:blur(8px);transition:border-color .3s}
+.card:hover{border-color:rgba(0,229,255,.14)}
+.card-title{font-size:9px;letter-spacing:2.5px;color:var(--accent);margin-bottom:14px;display:flex;align-items:center;gap:8px;opacity:.8}
+.card-title::after{content:'';flex:1;height:1px;background:linear-gradient(90deg,rgba(0,229,255,.2),transparent)}
+/* Inputs */
+.input-group{display:flex;flex-direction:column;gap:5px}
+.input-label{font-size:9px;color:var(--muted);letter-spacing:1.5px}
+.input-field{background:rgba(2,8,16,.8);border:1px solid rgba(0,229,255,.1);color:var(--text);font-family:var(--font-mono);font-size:11px;padding:9px 12px;width:100%;outline:none;transition:all .25s}
+.input-field:hover{border-color:rgba(0,229,255,.2)}
+.input-field:focus{border-color:rgba(0,229,255,.5);box-shadow:0 0 0 2px rgba(0,229,255,.06),inset 0 0 8px rgba(0,229,255,.04)}
+.input-field::placeholder{color:#0d2840}
+select.input-field{cursor:pointer}
+/* Address */
+.address-wrap{position:relative}
+.address-display{font-family:var(--font-mono);font-size:9px;color:var(--accent);word-break:break-all;background:rgba(0,229,255,.03);border:1px solid rgba(0,229,255,.1);padding:9px;line-height:1.8;cursor:pointer;transition:all .25s;user-select:all}
+.address-display:hover{background:rgba(0,229,255,.07);border-color:rgba(0,229,255,.3);box-shadow:0 0 20px rgba(0,229,255,.08)}
+.copy-hint{font-size:8px;color:var(--muted);margin-top:3px;opacity:0;transition:opacity .2s;letter-spacing:.5px}
+.address-wrap:hover .copy-hint{opacity:1}
+/* Metrics */
+.metric-grid{display:grid;grid-template-columns:1fr 1fr;gap:6px;margin-top:10px}
+.metric{background:rgba(2,8,16,.7);border:1px solid rgba(0,229,255,.07);padding:11px;transition:all .3s;cursor:default;position:relative;overflow:hidden}
+.metric::before{content:'';position:absolute;top:0;left:0;width:0;height:100%;background:linear-gradient(90deg,rgba(0,229,255,.06),transparent);transition:width .4s}
+.metric:hover::before{width:100%}
+.metric:hover{border-color:rgba(0,229,255,.25);transform:translateX(2px)}
+.metric-val{font-family:var(--font-head);font-size:16px;font-weight:700;color:#fff;transition:color .2s}
+.metric:hover .metric-val{color:var(--accent)}
+.metric-lbl{font-size:8px;color:var(--muted);margin-top:3px;letter-spacing:.5px}
+/* Risk bar */
+.risk-bar-wrap{background:rgba(2,8,16,.8);border:1px solid rgba(0,229,255,.08);height:6px;margin:8px 0;position:relative;overflow:hidden}
+.risk-bar{height:100%;transition:width 1.4s cubic-bezier(.34,1.56,.64,1);position:relative}
+.risk-shine{position:absolute;top:0;bottom:0;width:80px;background:linear-gradient(90deg,transparent,rgba(255,255,255,.4),transparent);animation:slideShine 2.5s ease infinite}
+.risk-low{background:linear-gradient(90deg,#00ff88,#00cc66)}
+.risk-med{background:linear-gradient(90deg,#f59e0b,#d97706)}
+.risk-high{background:linear-gradient(90deg,#ef4444,#dc2626)}
+/* Badges */
+.badge{display:inline-block;font-size:9px;padding:2px 9px;letter-spacing:1px;font-weight:700;cursor:default;transition:all .25s}
+.badge:hover{transform:scale(1.05);filter:brightness(1.3)}
+.badge-low{background:rgba(0,255,136,.1);color:#00ff88;border:1px solid rgba(0,255,136,.25)}
+.badge-med{background:rgba(245,158,11,.1);color:var(--warn);border:1px solid rgba(245,158,11,.25)}
+.badge-high{background:rgba(239,68,68,.1);color:var(--danger);border:1px solid rgba(239,68,68,.25)}
+.badge-exchange{background:rgba(124,58,237,.1);color:#a78bfa;border:1px solid rgba(124,58,237,.25)}
+.badge-unknown{background:rgba(61,96,128,.1);color:var(--muted);border:1px solid rgba(61,96,128,.2)}
+.badge-donation{background:rgba(0,255,136,.08);color:#00ff88;border:1px solid rgba(0,255,136,.2)}
+.badge-mixer{background:rgba(239,68,68,.1);color:var(--danger);border:1px solid rgba(239,68,68,.25)}
+.badge-scam{background:rgba(239,68,68,.12);color:var(--danger);border:1px solid rgba(239,68,68,.3)}
+/* Flags */
+.flag-item{display:flex;gap:10px;padding:10px;background:rgba(2,8,16,.6);border-left:2px solid rgba(245,158,11,.4);margin-bottom:6px;cursor:default;transition:all .3s;position:relative;overflow:hidden}
+.flag-item::before{content:'';position:absolute;inset:0;background:linear-gradient(90deg,rgba(245,158,11,.06),transparent);opacity:0;transition:opacity .3s}
+.flag-item:hover::before{opacity:1}
+.flag-item:hover{border-left-color:var(--warn);transform:translateX(4px)}
+.flag-item:last-child{margin-bottom:0}
+.flag-icon{flex-shrink:0;font-size:14px}
+.flag-title{font-size:10px;font-weight:700;color:var(--warn);margin-bottom:3px;transition:color .2s}
+.flag-item:hover .flag-title{color:#fcd34d}
+.flag-desc{color:var(--muted);line-height:1.7;font-size:9px}
+/* Graph */
+.graph-wrap{background:rgba(2,6,14,.95);border:1px solid rgba(0,229,255,.08);position:relative;overflow:hidden}
+#cy{width:100%;height:500px}
+.graph-controls{display:flex;gap:6px;padding:9px 12px;border-bottom:1px solid rgba(0,229,255,.06);align-items:center;flex-wrap:wrap;background:rgba(2,8,16,.8)}
+.graph-btn{background:rgba(0,229,255,.04);border:1px solid rgba(0,229,255,.1);color:var(--muted);font-family:var(--font-mono);font-size:9px;padding:5px 11px;cursor:pointer;transition:all .25s;letter-spacing:.5px;white-space:nowrap}
+.graph-btn:hover{border-color:var(--accent);color:var(--accent);background:rgba(0,229,255,.1);box-shadow:0 0 12px rgba(0,229,255,.2)}
+.graph-btn:active{transform:scale(.96)}
+.graph-legend{display:flex;flex-wrap:wrap;gap:12px;padding:9px 12px;border-top:1px solid rgba(0,229,255,.06);font-size:10px;background:rgba(2,8,16,.6)}
+.legend-item{display:flex;align-items:center;gap:6px;color:var(--muted);cursor:default;transition:all .25s;padding:2px 4px}
+.legend-item:hover{color:var(--text)}
+.legend-dot{width:8px;height:8px;border-radius:1px;transition:all .3s}
+.legend-item:hover .legend-dot{transform:scale(1.5);border-radius:50%}
+.graph-hint{position:absolute;bottom:50px;right:10px;font-size:8px;color:rgba(61,96,128,.8);background:rgba(2,8,16,.85);border:1px solid rgba(0,229,255,.08);padding:5px 9px;pointer-events:none;letter-spacing:.5px}
+/* Graph zoom indicator */
+.zoom-indicator{position:absolute;top:10px;right:10px;background:rgba(2,8,16,.85);border:1px solid rgba(0,229,255,.12);padding:5px 10px;font-size:9px;color:var(--accent);letter-spacing:1px;pointer-events:none;transition:opacity .3s}
+/* Tooltip */
+.tooltip-box{position:fixed;background:rgba(4,12,24,.97);border:1px solid rgba(0,229,255,.3);padding:14px;pointer-events:none;z-index:9999;min-width:220px;max-width:300px;box-shadow:0 0 40px rgba(0,229,255,.15),0 8px 32px rgba(0,0,0,.8);animation:fadeInFast .15s ease}
+.tooltip-box::before{content:'';position:absolute;top:0;left:0;right:0;height:1px;background:linear-gradient(90deg,transparent,var(--accent),transparent)}
+.tooltip-addr{color:var(--accent);font-size:9px;word-break:break-all;margin-bottom:10px;padding-bottom:8px;border-bottom:1px solid rgba(0,229,255,.1)}
+.tooltip-row{display:flex;justify-content:space-between;gap:16px;margin-bottom:5px}
+.tooltip-key{color:var(--muted);font-size:9px}
+.tooltip-val{color:var(--text);font-size:9px;font-weight:700}
+/* Timeline bars */
+.tl-bar-group{display:flex;align-items:flex-end;gap:2px;height:90px;padding:0 2px}
+.tl-bar{flex:1;min-width:5px;position:relative;cursor:pointer;transition:all .25s;border-radius:1px 1px 0 0}
+.tl-bar:hover{transform:scaleY(1.05);filter:brightness(2)}
+.tl-bar.vol-bar{background:rgba(0,229,255,.18);border-top:2px solid var(--accent)}
+.tl-bar.count-bar{background:rgba(124,58,237,.18);border-top:2px solid var(--accent2)}
+.tl-bar-tip{position:absolute;bottom:calc(100% + 8px);left:50%;transform:translateX(-50%);background:rgba(4,12,24,.97);border:1px solid rgba(0,229,255,.2);padding:7px 11px;font-size:9px;white-space:nowrap;pointer-events:none;opacity:0;transition:opacity .15s;z-index:10;text-align:center}
+.tl-bar-tip::before{content:'';position:absolute;bottom:-5px;left:50%;transform:translateX(-50%);width:6px;height:6px;background:rgba(4,12,24,.97);border-right:1px solid rgba(0,229,255,.2);border-bottom:1px solid rgba(0,229,255,.2);transform:translateX(-50%) rotate(45deg)}
+.tl-bar:hover .tl-bar-tip{opacity:1}
+.tl-labels{display:flex;gap:2px;padding:0 2px;margin-top:5px}
+.tl-label{flex:1;font-size:7px;color:rgba(61,96,128,.7);text-align:center;overflow:hidden}
+/* Transactions */
+.tx-row{display:grid;grid-template-columns:1fr 80px 66px 84px;gap:8px;padding:9px 12px;border-bottom:1px solid rgba(15,32,53,.8);font-size:10px;align-items:center;cursor:pointer;transition:all .2s;position:relative}
+.tx-row::before{content:'';position:absolute;left:0;top:0;bottom:0;width:0;background:linear-gradient(90deg,rgba(0,229,255,.06),transparent);transition:width .3s}
+.tx-row:hover::before{width:100%}
+.tx-row:last-child{border-bottom:none}
+.tx-row:hover{background:rgba(0,229,255,.03)}
+.tx-amount{color:var(--success);text-align:right;font-weight:700;transition:text-shadow .2s}
+.tx-row:hover .tx-amount{text-shadow:0 0 12px var(--success)}
+.tx-time{color:var(--muted);font-size:9px;text-align:right}
+.tx-hash{font-size:8px;color:#0d2840;margin-top:2px;font-family:var(--font-mono)}
+.tx-expanded{background:rgba(0,229,255,.02);border-bottom:1px solid rgba(0,229,255,.08);padding:12px 14px;animation:fadeInFast .2s ease}
+.tx-field{display:flex;gap:8px;margin-bottom:5px;align-items:flex-start}
+.tx-field-key{color:var(--muted);min-width:78px;font-size:9px;flex-shrink:0;letter-spacing:.5px}
+.tx-field-val{color:var(--accent);font-family:var(--font-mono);font-size:9px;word-break:break-all;cursor:pointer;transition:all .2s}
+.tx-field-val:hover{color:#fff;text-shadow:0 0 8px var(--accent)}
+/* Tabs */
+.tabs{display:flex;gap:0;border-bottom:1px solid rgba(0,229,255,.08)}
+.tab{font-size:9px;padding:11px 16px;cursor:pointer;color:var(--muted);border-bottom:2px solid transparent;margin-bottom:-1px;transition:all .25s;letter-spacing:1px;white-space:nowrap;user-select:none;position:relative;overflow:hidden}
+.tab::before{content:'';position:absolute;inset:0;background:rgba(0,229,255,0);transition:background .3s}
+.tab:hover::before{background:rgba(0,229,255,.04)}
+.tab.active{color:var(--accent);border-bottom-color:var(--accent)}
+.tab:hover:not(.active){color:rgba(212,232,255,.6)}
+/* Report */
+.report-section{border-left:2px solid rgba(0,229,255,.3);padding-left:16px;margin-bottom:22px;transition:all .3s;cursor:default}
+.report-section:hover{border-left-color:var(--accent)}
+.report-title{font-family:var(--font-head);font-size:12px;font-weight:700;color:#fff;margin-bottom:8px;transition:color .2s}
+.report-section:hover .report-title{color:var(--accent)}
+.report-text{font-size:11px;color:var(--muted);line-height:2.1}
+.report-path{background:rgba(2,8,16,.8);border:1px solid rgba(0,229,255,.1);padding:14px;font-size:10px;font-family:var(--font-mono);line-height:2.3;margin-top:8px;white-space:pre-line;transition:border-color .3s}
+.report-path:hover{border-color:rgba(0,229,255,.3)}
+/* Node panel */
+.node-panel{background:rgba(4,12,24,.97);border:1px solid rgba(0,229,255,.3);padding:18px;animation:slideIn .25s ease;position:relative;overflow:hidden;box-shadow:0 0 30px rgba(0,229,255,.1)}
+.node-panel::before{content:'';position:absolute;top:0;left:0;right:0;height:1px;background:linear-gradient(90deg,var(--accent),var(--accent2))}
+.node-panel-title{font-family:var(--font-head);font-size:12px;font-weight:700;color:#fff;margin-bottom:14px;display:flex;align-items:center;justify-content:space-between}
+.node-close{cursor:pointer;color:var(--muted);font-size:16px;transition:all .2s;line-height:1;width:22px;height:22px;display:flex;align-items:center;justify-content:center;border:1px solid transparent}
+.node-close:hover{color:var(--danger);border-color:rgba(239,68,68,.3);background:rgba(239,68,68,.08)}
+/* Spinner */
+.spinner{width:36px;height:36px;border:2px solid rgba(0,229,255,.15);border-top-color:var(--accent);border-radius:50%;animation:spin 1s linear infinite;box-shadow:0 0 12px rgba(0,229,255,.2)}
+/* Progress */
+.progress-wrap{width:280px;background:rgba(2,8,16,.8);border:1px solid rgba(0,229,255,.1);height:3px;overflow:hidden}
+.progress-bar{height:100%;background:linear-gradient(90deg,var(--accent),var(--accent2));transition:width .35s ease;box-shadow:0 0 8px var(--accent)}
+/* Toast */
+.toast{position:fixed;bottom:24px;right:24px;background:rgba(4,12,24,.97);border:1px solid rgba(0,255,136,.3);color:var(--success);font-family:var(--font-mono);font-size:11px;padding:11px 20px;z-index:9999;animation:fadeIn .3s ease;letter-spacing:.5px;pointer-events:none;box-shadow:0 0 20px rgba(0,255,136,.15)}
+.toast::before{content:'';position:absolute;top:0;left:0;right:0;height:1px;background:linear-gradient(90deg,transparent,var(--success),transparent)}
+/* Buttons */
+.analyze-btn{flex:1;padding:11px;background:var(--accent);color:#000;font-family:var(--font-mono);font-size:11px;font-weight:700;border:none;cursor:pointer;letter-spacing:1px;transition:all .25s;display:flex;align-items:center;justify-content:center;gap:6px;position:relative;overflow:hidden}
+.analyze-btn::before{content:'';position:absolute;inset:0;background:linear-gradient(90deg,transparent,rgba(255,255,255,.25),transparent);transform:translateX(-100%)}
+.analyze-btn:hover::before{transition:transform .5s;transform:translateX(100%)}
+.analyze-btn:hover{background:#00f5ff;box-shadow:0 0 30px rgba(0,229,255,.5)}
+.analyze-btn:active{transform:scale(.98)}
+.analyze-btn:disabled{opacity:.4;cursor:not-allowed}
+.demo-btn{flex:1;padding:11px;background:rgba(124,58,237,.08);color:#a78bfa;font-family:var(--font-mono);font-size:11px;border:1px solid rgba(124,58,237,.2);cursor:pointer;letter-spacing:1px;transition:all .25s}
+.demo-btn:hover{border-color:rgba(124,58,237,.5);background:rgba(124,58,237,.15);box-shadow:0 0 20px rgba(124,58,237,.2);transform:translateY(-1px)}
+.demo-btn:active{transform:scale(.98)}
+.demo-btn:disabled{opacity:.4;cursor:not-allowed}
+/* Counterparty */
+.cp-item{padding:10px 8px;transition:all .25s;cursor:pointer;border:1px solid transparent;margin-bottom:4px;position:relative;overflow:hidden}
+.cp-item::before{content:'';position:absolute;inset:0;background:linear-gradient(90deg,rgba(0,229,255,.04),transparent);opacity:0;transition:opacity .3s}
+.cp-item:hover::before{opacity:1}
+.cp-item:hover{border-color:rgba(0,229,255,.12);transform:translateX(3px)}
+.cp-bar-bg{flex:1;background:rgba(2,8,16,.8);height:5px;border:1px solid rgba(0,229,255,.08);overflow:hidden}
+.cp-bar-fill{height:100%;transition:width 1.4s cubic-bezier(.34,1.1,.64,1)}
+/* Empty state */
+.empty-state{display:flex;flex-direction:column;align-items:center;justify-content:center;flex:1;gap:18px;padding:80px 0;text-align:center}
+/* Docs page */
+.docs-grid{display:grid;grid-template-columns:220px 1fr;gap:0;min-height:calc(100vh - 57px)}
+.docs-nav{background:rgba(4,10,20,.95);border-right:1px solid rgba(0,229,255,.06);padding:20px 0;overflow-y:auto}
+.docs-nav-section{padding:6px 20px;font-size:8px;letter-spacing:2px;color:rgba(61,96,128,.6);margin-top:14px;margin-bottom:4px}
+.docs-nav-item{padding:8px 20px;font-size:10px;color:var(--muted);cursor:pointer;transition:all .25s;letter-spacing:.5px;display:flex;align-items:center;gap:8px;border-left:2px solid transparent}
+.docs-nav-item:hover{color:var(--text);background:rgba(0,229,255,.03);border-left-color:rgba(0,229,255,.3)}
+.docs-nav-item.active{color:var(--accent);background:rgba(0,229,255,.05);border-left-color:var(--accent)}
+.docs-content{padding:32px 40px;overflow-y:auto;max-height:calc(100vh - 57px)}
+.docs-h1{font-family:var(--font-head);font-size:28px;font-weight:800;color:#fff;letter-spacing:-1px;margin-bottom:8px}
+.docs-h2{font-family:var(--font-head);font-size:18px;font-weight:700;color:#fff;letter-spacing:-.5px;margin:28px 0 12px;padding-bottom:8px;border-bottom:1px solid rgba(0,229,255,.08)}
+.docs-h3{font-family:var(--font-head);font-size:14px;font-weight:700;color:var(--accent);margin:18px 0 8px;letter-spacing:.5px}
+.docs-p{font-size:12px;color:var(--muted);line-height:2;margin-bottom:14px}
+.docs-code{background:rgba(2,8,16,.9);border:1px solid rgba(0,229,255,.1);padding:14px 16px;font-family:var(--font-mono);font-size:10px;color:var(--accent);margin:12px 0;overflow-x:auto;line-height:1.9;position:relative}
+.docs-code::before{content:'CODE';position:absolute;top:5px;right:10px;font-size:8px;color:rgba(61,96,128,.5);letter-spacing:2px}
+.docs-tag{display:inline-block;background:rgba(0,229,255,.08);border:1px solid rgba(0,229,255,.2);color:var(--accent);font-size:9px;padding:2px 8px;letter-spacing:1px;margin:2px;cursor:default;transition:all .25s}
+.docs-tag:hover{background:rgba(0,229,255,.15);box-shadow:0 0 12px rgba(0,229,255,.2)}
+.docs-alert{border-left:3px solid;padding:14px 16px;margin:14px 0;font-size:11px;line-height:1.9}
+.docs-alert.warn{border-color:var(--warn);background:rgba(245,158,11,.05);color:rgba(245,158,11,.8)}
+.docs-alert.danger{border-color:var(--danger);background:rgba(239,68,68,.05);color:rgba(239,68,68,.8)}
+.docs-alert.info{border-color:var(--accent);background:rgba(0,229,255,.04);color:rgba(0,229,255,.8)}
+.news-card{background:rgba(7,15,29,.9);border:1px solid rgba(0,229,255,.07);padding:16px;margin-bottom:10px;cursor:pointer;transition:all .3s;position:relative;overflow:hidden}
+.news-card::before{content:'';position:absolute;left:0;top:0;bottom:0;width:0;transition:width .3s}
+.news-card:hover::before{width:2px}
+.news-card:hover{border-color:rgba(0,229,255,.2);transform:translateX(3px)}
+.news-card.high::before{background:var(--danger)}.news-card.med::before{background:var(--warn)}.news-card.low::before{background:var(--success)}.news-card.info-c::before{background:var(--accent)}
+.news-title{font-size:11px;color:var(--text);margin-bottom:5px;font-weight:700;transition:color .2s}
+.news-card:hover .news-title{color:var(--accent)}
+.news-meta{font-size:9px;color:var(--muted);display:flex;gap:12px}
+.news-body{font-size:10px;color:var(--muted);line-height:1.8;margin-top:8px;display:none}
+.news-card.expanded .news-body{display:block}
+.news-card.expanded{border-color:rgba(0,229,255,.2)}
+.api-row{display:grid;grid-template-columns:110px 80px 1fr;gap:12px;padding:10px 12px;border-bottom:1px solid rgba(15,32,53,.6);font-size:10px;align-items:start;transition:background .2s;cursor:default}
+.api-row:hover{background:rgba(0,229,255,.02)}
+.method-get{color:#00ff88;font-weight:700}.method-post{color:#f59e0b;font-weight:700}
+.stat-block{background:rgba(2,8,16,.6);border:1px solid rgba(0,229,255,.08);padding:14px;display:flex;flex-direction:column;gap:4px;transition:all .3s;cursor:default}
+.stat-block:hover{border-color:rgba(0,229,255,.25);background:rgba(0,229,255,.03)}
+footer{border-top:1px solid rgba(0,229,255,.06);padding:24px 40px;display:flex;align-items:center;justify-content:space-between;font-size:10px;color:var(--muted);background:rgba(2,8,16,.8)}
+@media(max-width:900px){.dashboard{grid-template-columns:1fr}.sidebar{max-height:none;border-right:none;border-bottom:1px solid rgba(0,229,255,.06)}.docs-grid{grid-template-columns:1fr}}
+</style>
+</head>
+<body>
+<canvas id="chain-bg"></canvas>
+<div id="root"></div>
+<script>
+/* ── EPIC CHAIN BACKGROUND ── */
+(function(){
+  const canvas=document.getElementById('chain-bg');
+  const ctx=canvas.getContext('2d');
+  let W,H,raf,frame=0,mouse={x:-999,y:-999};
+
+  function resize(){W=canvas.width=window.innerWidth;H=canvas.height=window.innerHeight;}
+  resize();
+  window.addEventListener('resize',resize);
+  document.addEventListener('mousemove',e=>{mouse.x=e.clientX;mouse.y=e.clientY;});
+
+  /* Blockchain nodes */
+  const NODES=[];
+  const N=22;
+  for(let i=0;i<N;i++){
+    NODES.push({
+      x:Math.random()*1.2*window.innerWidth-.1*window.innerWidth,
+      y:Math.random()*1.2*window.innerHeight-.1*window.innerHeight,
+      vx:(Math.random()-.5)*.22,vy:(Math.random()-.5)*.22,
+      size:6+Math.random()*10,pulse:Math.random()*Math.PI*2,
+      pSpeed:.008+Math.random()*.015,
+      type:i<4?'hub':i<10?'block':'leaf',
+      hash:'0x'+Math.floor(Math.random()*0xffffff).toString(16).padStart(6,'0'),
+      glowRadius:0,
+    });
+  }
+
+  /* Data packets */
+  const PACKETS=[];
+  let lastPkt=0;
+
+  /* Hexagonal tiling background */
+  const HEX_SIZE=55,HEX_H=HEX_SIZE*Math.sqrt(3);
+
+  function hexPath(cx,cy,r){
+    ctx.beginPath();
+    for(let i=0;i<6;i++){
+      const a=Math.PI/3*i-Math.PI/6;
+      i?ctx.lineTo(cx+r*Math.cos(a),cy+r*Math.sin(a)):ctx.moveTo(cx+r*Math.cos(a),cy+r*Math.sin(a));
+    }
+    ctx.closePath();
+  }
+
+  function drawHexGrid(){
+    const cols=Math.ceil(W/HEX_SIZE/1.5)+2,rows=Math.ceil(H/HEX_H)+2;
+    ctx.save();
+    for(let row=-1;row<rows;row++){
+      for(let col=-1;col<cols;col++){
+        const cx=col*HEX_SIZE*1.5;
+        const cy=row*HEX_H+(col%2===0?0:HEX_H/2);
+        const dx=cx-mouse.x,dy=cy-mouse.y,dist=Math.sqrt(dx*dx+dy*dy);
+        const proximity=Math.max(0,1-dist/320);
+        const baseAlpha=.018+proximity*.06;
+        hexPath(cx,cy,HEX_SIZE*.5);
+        ctx.strokeStyle=`rgba(0,229,255,${baseAlpha})`;
+        ctx.lineWidth=proximity>.1?1:.4;
+        ctx.stroke();
+        if(proximity>.3){
+          ctx.fillStyle=`rgba(0,229,255,${proximity*.025})`;
+          ctx.fill();
+        }
+      }
+    }
+    ctx.restore();
+  }
+
+  function drawChainLink(x1,y1,x2,y2,alpha,isActive){
+    const dx=x2-x1,dy=y2-y1,dist=Math.sqrt(dx*dx+dy*dy);
+    if(dist<10) return;
+    const nx=dx/dist,ny=dy/dist,px=-ny,py=nx;
+
+    ctx.save();
+    /* Glow line */
+    ctx.globalAlpha=alpha*(isActive?.5:.18);
+    const grad=ctx.createLinearGradient(x1,y1,x2,y2);
+    grad.addColorStop(0,'rgba(0,229,255,0)');
+    grad.addColorStop(.5,`rgba(0,229,255,${isActive?.6:.3})`);
+    grad.addColorStop(1,'rgba(0,229,255,0)');
+    ctx.strokeStyle=grad;ctx.lineWidth=isActive?2:1;
+    ctx.beginPath();ctx.moveTo(x1,y1);ctx.lineTo(x2,y2);ctx.stroke();
+
+    /* Chain links */
+    const segLen=16,gap=5,linkW=3.5;
+    const total=Math.floor(dist/(segLen+gap));
+    ctx.globalAlpha=alpha*(isActive?.35:.12);
+    ctx.strokeStyle=isActive?'rgba(0,229,255,.9)':'rgba(0,180,220,.6)';
+    ctx.lineWidth=.8;
+    for(let s=0;s<total;s++){
+      const t0=(s*(segLen+gap))/dist,t1=((s*(segLen+gap))+segLen)/dist;
+      const cx0=x1+dx*t0,cy0=y1+dy*t0,cx1=x1+dx*t1,cy1=y1+dy*t1;
+      const side=(s%2===0?1:-1)*linkW;
+      ctx.beginPath();
+      ctx.moveTo(cx0+px*side,cy0+py*side);
+      ctx.lineTo(cx1+px*side,cy1+py*side);
+      /* cross bars */
+      ctx.moveTo(cx0+px*linkW,cy0+py*linkW);ctx.lineTo(cx0-px*linkW,cy0-py*linkW);
+      ctx.moveTo(cx1+px*linkW,cy1+py*linkW);ctx.lineTo(cx1-px*linkW,cy1-py*linkW);
+      ctx.stroke();
+    }
+    ctx.restore();
+  }
+
+  function drawNode(n,alpha){
+    const glow=.5+.5*Math.sin(n.pulse);
+    const r=n.size;
+    const dx=n.x-mouse.x,dy=n.y-mouse.y,dist=Math.sqrt(dx*dx+dy*dy);
+    const proximity=Math.max(0,1-dist/200);
+    const finalAlpha=alpha*(0.45+glow*.4+proximity*.5);
+
+    ctx.save();
+    /* Outer glow */
+    const outerGlow=ctx.createRadialGradient(n.x,n.y,0,n.x,n.y,r*3.5);
+    outerGlow.addColorStop(0,`rgba(0,229,255,${.15*glow+proximity*.25})`);
+    outerGlow.addColorStop(1,'rgba(0,229,255,0)');
+    ctx.globalAlpha=finalAlpha;
+    ctx.fillStyle=outerGlow;
+    ctx.beginPath();ctx.arc(n.x,n.y,r*3.5,0,Math.PI*2);ctx.fill();
+
+    /* Block body */
+    const s=r*.72;
+    ctx.globalAlpha=finalAlpha*.9;
+    ctx.fillStyle='rgba(2,8,16,.85)';
+    ctx.strokeStyle=n.type==='hub'?`rgba(0,229,255,${.5+glow*.5})`
+      :n.type==='block'?`rgba(0,180,200,${.3+glow*.3})`:`rgba(0,100,140,${.2+glow*.2})`;
+    ctx.lineWidth=n.type==='hub'?1.5:.8;
+    ctx.beginPath();ctx.rect(n.x-s,n.y-s,s*2,s*2);ctx.fill();ctx.stroke();
+
+    /* Inner detail lines */
+    ctx.globalAlpha=finalAlpha*.4;
+    ctx.strokeStyle='rgba(0,229,255,.6)';ctx.lineWidth=.5;
+    ctx.beginPath();
+    ctx.moveTo(n.x-s*.5,n.y-s*.2);ctx.lineTo(n.x+s*.5,n.y-s*.2);
+    ctx.moveTo(n.x-s*.5,n.y+s*.2);ctx.lineTo(n.x+s*.3,n.y+s*.2);
+    ctx.moveTo(n.x-s*.5,n.y);ctx.lineTo(n.x+s*.1,n.y);
+    ctx.stroke();
+
+    /* Hash label for hub nodes */
+    if(n.type==='hub'){
+      ctx.globalAlpha=finalAlpha*.5*(0.3+glow*.5+proximity*.4);
+      ctx.fillStyle=`rgba(0,229,255,${.4+proximity*.4})`;
+      ctx.font=`${6+proximity*2}px Space Mono,monospace`;
+      ctx.textAlign='center';
+      ctx.fillText(n.hash,n.x,n.y+r+11);
+    }
+    ctx.restore();
+  }
+
+  function drawPacket(p,alpha){
+    const from=NODES[p.from],to=NODES[p.to];
+    if(!from||!to) return;
+    const x=from.x+(to.x-from.x)*p.t;
+    const y=from.y+(to.y-from.y)*p.t;
+    const fade=p.t<.15?p.t/.15:p.t>.85?(1-p.t)/.15:1;
+    ctx.save();
+    ctx.globalAlpha=alpha*fade*.9;
+    /* Trail */
+    const trailLen=6;
+    for(let i=0;i<trailLen;i++){
+      const ft=Math.max(0,p.t-i*.012);
+      const tx=from.x+(to.x-from.x)*ft,ty=from.y+(to.y-from.y)*ft;
+      const tg=ctx.createRadialGradient(tx,ty,0,tx,ty,5-i*.6);
+      tg.addColorStop(0,`rgba(0,229,255,${.6-i*.08})`);
+      tg.addColorStop(1,'rgba(0,229,255,0)');
+      ctx.fillStyle=tg;
+      ctx.beginPath();ctx.arc(tx,ty,5-i*.6,0,Math.PI*2);ctx.fill();
+    }
+    /* Head */
+    const hg=ctx.createRadialGradient(x,y,0,x,y,7);
+    hg.addColorStop(0,'rgba(255,255,255,.9)');
+    hg.addColorStop(.3,'rgba(0,229,255,.8)');
+    hg.addColorStop(1,'rgba(0,229,255,0)');
+    ctx.fillStyle=hg;
+    ctx.beginPath();ctx.arc(x,y,7,0,Math.PI*2);ctx.fill();
+    ctx.fillStyle='#fff';ctx.beginPath();ctx.arc(x,y,1.5,0,Math.PI*2);ctx.fill();
+    ctx.restore();
+  }
+
+  function getEdges(){
+    const edges=[];
+    NODES.forEach((a,i)=>{
+      const sorted=NODES.map((b,j)=>{
+        if(i===j) return{j,d:Infinity};
+        const dx=b.x-a.x,dy=b.y-a.y;return{j,d:Math.sqrt(dx*dx+dy*dy)};
+      }).sort((a,b)=>a.d-b.d);
+      const k=a.type==='hub'?5:a.type==='block'?3:2;
+      sorted.slice(1,k+1).forEach(({j,d})=>{
+        if(d<Math.min(W,H)*.55&&!edges.find(e=>(e.i===j&&e.j===i))) edges.push({i,j,d});
+      });
+    });
+    return edges;
+  }
+
+  function draw(){
+    ctx.clearRect(0,0,W,H);
+
+    /* Dark base */
+    ctx.fillStyle='rgba(2,8,16,1)';ctx.fillRect(0,0,W,H);
+
+    /* Deep radial glow */
+    const bg=ctx.createRadialGradient(W*.5,H*.3,0,W*.5,H*.3,W*.7);
+    bg.addColorStop(0,'rgba(0,40,80,.6)');bg.addColorStop(.5,'rgba(0,20,50,.3)');bg.addColorStop(1,'rgba(2,8,16,0)');
+    ctx.fillStyle=bg;ctx.fillRect(0,0,W,H);
+
+    /* Mouse radial glow */
+    if(mouse.x>0){
+      const mg=ctx.createRadialGradient(mouse.x,mouse.y,0,mouse.x,mouse.y,300);
+      mg.addColorStop(0,'rgba(0,229,255,.04)');mg.addColorStop(1,'rgba(0,229,255,0)');
+      ctx.fillStyle=mg;ctx.fillRect(0,0,W,H);
+    }
+
+    /* Hex grid */
+    drawHexGrid();
+
+    /* Move nodes */
+    NODES.forEach(n=>{
+      n.x+=n.vx;n.y+=n.vy;n.pulse+=n.pSpeed;
+      if(n.x<-80)n.x=W+80;if(n.x>W+80)n.x=-80;
+      if(n.y<-80)n.y=H+80;if(n.y>H+80)n.y=-80;
+    });
+
+    /* Edges */
+    const edges=getEdges();
+    edges.forEach(({i,j,d})=>{
+      const a=Math.max(0,1-d/(Math.min(W,H)*.5));
+      const ni=NODES[i],nj=NODES[j];
+      const dx1=ni.x-mouse.x,dy1=ni.y-mouse.y;
+      const dx2=nj.x-mouse.x,dy2=nj.y-mouse.y;
+      const nearMouse=Math.sqrt(dx1*dx1+dy1*dy1)<180||Math.sqrt(dx2*dx2+dy2*dy2)<180;
+      drawChainLink(ni.x,ni.y,nj.x,nj.y,a,nearMouse);
+    });
+
+    /* Packets */
+    frame++;
+    if(frame-lastPkt>35&&edges.length){
+      const e=edges[Math.floor(Math.random()*edges.length)];
+      PACKETS.push({from:e.i,to:e.j,t:0,speed:.004+Math.random()*.007});
+      lastPkt=frame;
+    }
+    for(let pi=PACKETS.length-1;pi>=0;pi--){
+      PACKETS[pi].t+=PACKETS[pi].speed;
+      if(PACKETS[pi].t>=1){PACKETS.splice(pi,1);continue;}
+      drawPacket(PACKETS[pi],.85);
+    }
+
+    /* Nodes */
+    NODES.forEach(n=>drawNode(n,.75));
+
+    /* Vignette */
+    const vg=ctx.createRadialGradient(W/2,H/2,H*.2,W/2,H/2,W*.8);
+    vg.addColorStop(0,'rgba(2,8,16,0)');vg.addColorStop(1,'rgba(2,8,16,.7)');
+    ctx.fillStyle=vg;ctx.fillRect(0,0,W,H);
+
+    raf=requestAnimationFrame(draw);
+  }
+  draw();
+})();
+</script>
+<script type="text/babel">
+const {useState,useEffect,useRef,useCallback,useMemo}=React;
+
+const LABELS={
+  "0xAb5801a7D398351b8bE11C439e05C5B3259aeC9B":{label:"Suspect Root Wallet",category:"unknown",color:"#00e5ff"},
+  "0xde0b295669a9fd93d5f28d9ec85e40f4cb697bae":{label:"Ethereum Foundation",category:"donation",color:"#00ff88"},
+  "0xdAC17F958D2ee523a2206206994597C13D831ec7":{label:"Tether USDT",category:"exchange",color:"#a78bfa"},
+  "0xsuspect001":{label:"Known Phishing Addr.",category:"scam",color:"#ef4444"},
+  "0xtornado001":{label:"Tornado Cash",category:"mixer",color:"#ef4444"},
+  "0xwallet002":{label:"0xwallet002",category:"unknown",color:"#3d6080"},
+  "0xwallet003":{label:"0xwallet003",category:"unknown",color:"#3d6080"},
+};
+
+/* Extended wallet dataset — shown when zooming in */
+const EXTENDED_WALLETS={
+  "0xwallet002":{
+    children:[
+      {addr:"0xsub001",totalReceived:1.2,totalSent:1.1,txCount:3,riskScore:30,category:"unknown",label:"0xsub001"},
+      {addr:"0xsub002",totalReceived:2.1,totalSent:2.0,txCount:5,riskScore:55,category:"unknown",label:"0xsub002"},
+    ]
+  },
+  "0xwallet003":{
+    children:[
+      {addr:"0xsub003",totalReceived:3.4,totalSent:3.3,txCount:7,riskScore:62,category:"unknown",label:"0xsub003"},
+    ]
+  },
+  "0xsuspect001":{
+    children:[
+      {addr:"0xsub_phish1",totalReceived:4.8,totalSent:4.7,txCount:11,riskScore:88,category:"scam",label:"Phishing Sub-wallet"},
+      {addr:"0xsub_phish2",totalReceived:1.1,totalSent:1.0,txCount:4,riskScore:79,category:"scam",label:"Scam Relay"},
+    ]
+  }
+};
+
+const DEMO={
+  rootWallet:"0xAb5801a7D398351b8bE11C439e05C5B3259aeC9B",
+  wallets:{
+    "0xAb5801a7D398351b8bE11C439e05C5B3259aeC9B":{totalReceived:148.7,totalSent:141.2,txCount:87,firstSeen:"2021-03-14",lastSeen:"2024-01-08",riskScore:72,category:"unknown"},
+    "0xde0b295669a9fd93d5f28d9ec85e40f4cb697bae":{totalReceived:9200,totalSent:0,txCount:1240,firstSeen:"2015-07-30",lastSeen:"2024-01-10",riskScore:5,category:"donation"},
+    "0xdAC17F958D2ee523a2206206994597C13D831ec7":{totalReceived:44000,totalSent:44000,txCount:8800,firstSeen:"2017-11-28",lastSeen:"2024-01-11",riskScore:8,category:"exchange"},
+    "0xsuspect001":{totalReceived:24.1,totalSent:23.9,txCount:14,firstSeen:"2023-09-01",lastSeen:"2024-01-07",riskScore:91,category:"scam"},
+    "0xtornado001":{totalReceived:8800,totalSent:8800,txCount:5500,firstSeen:"2019-05-01",lastSeen:"2022-08-15",riskScore:95,category:"mixer"},
+    "0xwallet002":{totalReceived:8.3,totalSent:7.1,txCount:6,firstSeen:"2023-11-20",lastSeen:"2024-01-05",riskScore:44,category:"unknown"},
+    "0xwallet003":{totalReceived:12.6,totalSent:11.8,txCount:9,firstSeen:"2023-12-01",lastSeen:"2024-01-09",riskScore:38,category:"unknown"},
+  },
+  transactions:[
+    {tx_hash:"0xa1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2",from:"0xAb5801a7D398351b8bE11C439e05C5B3259aeC9B",to:"0xde0b295669a9fd93d5f28d9ec85e40f4cb697bae",amount_eth:2.5,timestamp:"2024-01-02T10:14:00Z",gas:"0.0024",block:19001234},
+    {tx_hash:"0xb2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3",from:"0xAb5801a7D398351b8bE11C439e05C5B3259aeC9B",to:"0xdAC17F958D2ee523a2206206994597C13D831ec7",amount_eth:18.4,timestamp:"2024-01-03T14:22:00Z",gas:"0.0031",block:19004561},
+    {tx_hash:"0xc3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4",from:"0xAb5801a7D398351b8bE11C439e05C5B3259aeC9B",to:"0xsuspect001",amount_eth:6.1,timestamp:"2024-01-03T14:55:00Z",gas:"0.0018",block:19004603},
+    {tx_hash:"0xd4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5",from:"0xAb5801a7D398351b8bE11C439e05C5B3259aeC9B",to:"0xwallet002",amount_eth:3.2,timestamp:"2024-01-04T09:01:00Z",gas:"0.0022",block:19007890},
+    {tx_hash:"0xe5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6",from:"0xAb5801a7D398351b8bE11C439e05C5B3259aeC9B",to:"0xwallet003",amount_eth:4.8,timestamp:"2024-01-04T09:03:00Z",gas:"0.0019",block:19007891},
+    {tx_hash:"0xf6a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1",from:"0xsuspect001",to:"0xtornado001",amount_eth:5.9,timestamp:"2024-01-05T22:30:00Z",gas:"0.0041",block:19011234},
+    {tx_hash:"0xa7b8c9d0e1f2a7b8c9d0e1f2a7b8c9d0e1f2a7b8c9d0e1f2a7b8c9d0e1f2a7b8",from:"0xwallet002",to:"0xdAC17F958D2ee523a2206206994597C13D831ec7",amount_eth:7.8,timestamp:"2024-01-06T11:44:00Z",gas:"0.0027",block:19014321},
+    {tx_hash:"0xb8c9d0e1f2a7b8c9d0e1f2a7b8c9d0e1f2a7b8c9d0e1f2a7b8c9d0e1f2a7b8c9",from:"0xAb5801a7D398351b8bE11C439e05C5B3259aeC9B",to:"0xsuspect001",amount_eth:1.8,timestamp:"2024-01-06T18:10:00Z",gas:"0.0016",block:19016789},
+    {tx_hash:"0xc9d0e1f2a7b8c9d0e1f2a7b8c9d0e1f2a7b8c9d0e1f2a7b8c9d0e1f2a7b8c9d0",from:"0xwallet003",to:"0xtornado001",amount_eth:11.2,timestamp:"2024-01-07T03:14:00Z",gas:"0.0038",block:19018432},
+    {tx_hash:"0xd0e1f2a7b8c9d0e1f2a7b8c9d0e1f2a7b8c9d0e1f2a7b8c9d0e1f2a7b8c9d0e1",from:"0xAb5801a7D398351b8bE11C439e05C5B3259aeC9B",to:"0xde0b295669a9fd93d5f28d9ec85e40f4cb697bae",amount_eth:1.1,timestamp:"2024-01-08T08:00:00Z",gas:"0.0021",block:19021567},
+  ],
+  timelineData:[
+    {date:"Dec 28",vol:2.1,count:1},{date:"Dec 29",vol:0,count:0},{date:"Dec 30",vol:4.4,count:2},
+    {date:"Dec 31",vol:1.8,count:1},{date:"Jan 01",vol:0,count:0},{date:"Jan 02",vol:2.5,count:1},
+    {date:"Jan 03",vol:24.5,count:2},{date:"Jan 04",vol:8.0,count:2},{date:"Jan 05",vol:5.9,count:1},
+    {date:"Jan 06",vol:9.6,count:2},{date:"Jan 07",vol:11.2,count:1},{date:"Jan 08",vol:1.1,count:1},
+  ],
+  riskFlags:[
+    {icon:"⚡",label:"Rapid Consecutive Transfers",desc:"3 transactions sent within 4 minutes on Jan 03–04, suggesting automated or scripted behavior.",score:18},
+    {icon:"🔀",label:"High Fan-out Pattern",desc:"Root wallet distributed funds to 5 distinct addresses in under 48 hours — classic fund-splitting.",score:16},
+    {icon:"⚠️",label:"Interaction with Mixer",desc:"Funds routed via intermediate wallets reached Tornado Cash — a known transaction obfuscation service.",score:20},
+    {icon:"🎯",label:"Known Scam Address",desc:"Direct transfer to 0xsuspect001, a flagged phishing address with 91/100 risk score.",score:12},
+    {icon:"💰",label:"Unusual Volume Spike",desc:"Jan 03 saw 24.5 ETH in a single day — 12× the wallet's average daily volume.",score:6},
+  ],
+};
+
+const shortAddr=a=>a?`${a.slice(0,8)}...${a.slice(-6)}`:'';
+const formatEth=v=>`${Number(v).toFixed(4)} ETH`;
+const riskColor=s=>s>=70?'var(--danger)':s>=40?'var(--warn)':'var(--success)';
+const riskClass=s=>s>=70?'badge-high':s>=40?'badge-med':'badge-low';
+const riskLabel=s=>s>=70?'HIGH':s>=40?'MEDIUM':'LOW';
+const catBadge=c=>({exchange:'badge-exchange',mixer:'badge-mixer',scam:'badge-scam',donation:'badge-donation',unknown:'badge-unknown'}[c]||'badge-unknown');
+const nodeColor=(addr,isRoot)=>{if(isRoot) return '#00e5ff';const l=LABELS[addr];return l?l.color:'#3d6080';};
+
+function Toast({msg,onDone}){
+  useEffect(()=>{const t=setTimeout(onDone,2200);return()=>clearTimeout(t)},[]);
+  return <div className="toast">✓ {msg}</div>;
+}
+
+function NodeTooltip({node,pos}){
+  if(!node) return null;
+  const info=DEMO.wallets[node]||{};
+  const lbl=LABELS[node];
+  return(
+    <div className="tooltip-box" style={{left:Math.min(pos.x+16,window.innerWidth-310),top:Math.min(pos.y+16,window.innerHeight-220)}}>
+      <div className="tooltip-addr">{node}</div>
+      {lbl&&<div style={{marginBottom:'10px'}}><span className={`badge ${catBadge(lbl.category)}`}>{lbl.label}</span></div>}
+      {[['Received',formatEth(info.totalReceived||0)],['Sent',formatEth(info.totalSent||0)],['Transactions',info.txCount||'—'],['Risk Score',`${info.riskScore||0}/100`],['First Active',info.firstSeen||'—'],['Last Active',info.lastSeen||'—']].map(([k,v])=>(
+        <div className="tooltip-row" key={k}>
+          <span className="tooltip-key">{k}</span>
+          <span className="tooltip-val" style={k==='Risk Score'?{color:riskColor(info.riskScore||0)}:{}}>{v}</span>
+        </div>
+      ))}
+    </div>
+  );
+}
+
+function Navbar({page,setPage}){
+  return(
+    <nav className="navbar">
+      <div className="logo" onClick={()=>setPage('home')}>
+        <div className="logo-icon">
+          <div className="logo-hex"/>
+          <div className="logo-ring"/>
+        </div>
+        CHAIN<span style={{color:'var(--accent)'}}>TRACE</span>
+      </div>
+      <div className="nav-links">
+        <a className={page==='home'?'active-page':''} onClick={()=>setPage('home')}>HOME</a>
+        <a className={page==='dashboard'?'active-page':''} onClick={()=>setPage('dashboard')}>INVESTIGATE</a>
+        <a className={page==='docs'?'active-page':''} onClick={()=>setPage('docs')}>DOCS</a>
+      </div>
+      <div className="nav-right">
+        <div className="live-pill"><span className="live-dot"/>SYSTEM ONLINE</div>
+        <div className="nav-badge">v1.0 BETA</div>
+      </div>
+    </nav>
+  );
+}
+
+/* ── HOME PAGE ── */
+function HomePage({setPage}){
+  return(
+    <div className="fade-in">
+      <div className="hero">
+        <div className="hero-overlay"/>
+        <div className="hero-scan"/>
+        <div className="hero-tag">◈ BLOCKCHAIN OSINT VISUALIZER</div>
+        <h1>Follow<br/><span className="accent-word">the Money</span></h1>
+        <p>ChainTrace traces fund flows across Ethereum wallets, detects suspicious patterns, enriches addresses with OSINT labels, and generates forensic investigation reports — in seconds.</p>
+        <div className="hero-btns">
+          <button className="btn-primary" onClick={()=>setPage('dashboard')}>▶ START INVESTIGATION</button>
+          <button className="btn-secondary" onClick={()=>setPage('dashboard')}>⬡ LOAD DEMO CASE</button>
+        </div>
+        <div className="hero-stats">
+          {[['5-hop','MAX TRACE DEPTH'],['100+','RISK SIGNALS'],['REAL-TIME','GRAPH ANALYSIS'],['OSINT','LABEL ENRICHMENT']].map(([n,l])=>(
+            <div className="stat" key={l}><div className="stat-num">{n}</div><div className="stat-label">{l}</div></div>
+          ))}
+        </div>
+      </div>
+
+      <div style={{borderTop:'1px solid rgba(0,229,255,.06)'}}>
+        <div className="section">
+          <div className="section-tag">CAPABILITIES</div>
+          <div className="section-title">Investigation-Grade Analysis</div>
+          <div className="section-sub">Built for OSINT analysts, blockchain forensics, and cybercrime investigators who need to follow illicit fund flows.</div>
+          <div className="features-grid">
+            {[
+              {icon:'🕸️',title:'Multi-hop Graph Tracing',desc:'Visualize wallet relationships up to 5 hops deep with Google Maps-style zoom: zoom in to reveal sub-wallets, zoom out for the big picture.'},
+              {icon:'⚡',title:'Real-time Risk Scoring',desc:'Rule-based engine detects fan-out patterns, rapid transfers, mixer interactions, and volume anomalies out of 100.'},
+              {icon:'🏷️',title:'OSINT Label Enrichment',desc:'Cross-reference addresses against exchanges, mixers, scam wallets, bridges, and known threat actor wallets.'},
+              {icon:'📊',title:'Timeline Analytics',desc:'Activity heatmaps and volume charts reveal behavioral patterns and suspicious timing clusters.'},
+              {icon:'📄',title:'Investigation Report',desc:'Auto-generated forensic reports with key findings, suspicious paths, and analyst recommendations.'},
+              {icon:'🔍',title:'Zoom-level Graph',desc:'Cytoscape.js graph reveals deeper wallet layers as you zoom in — just like Google Maps showing more streets up close.'},
+            ].map(f=>(
+              <div className="feature-card" key={f.title}>
+                <span className="feature-icon">{f.icon}</span>
+                <div className="feature-title">{f.title}</div>
+                <div className="feature-desc">{f.desc}</div>
+              </div>
+            ))}
+          </div>
+        </div>
+      </div>
+
+      <div style={{borderTop:'1px solid rgba(0,229,255,.06)',background:'rgba(4,10,20,.5)'}}>
+        <div className="section">
+          <div className="section-tag">WORKFLOW</div>
+          <div className="section-title">How It Works</div>
+          <div className="workflow-wrap">
+            {['Input Wallet Address','Fetch Transactions','Build Fund Flow Graph','Score Risk Signals','Generate Report'].map((s,i)=>(
+              <div className="workflow-step" key={s}>
+                <div className="step-num">{i+1}</div>
+                <div className="step-lbl">{s}</div>
+              </div>
+            ))}
+          </div>
+        </div>
+      </div>
+      <footer>
+        <div>ChainTrace — Blockchain OSINT Visualizer · Academic Prototype</div>
+        <div style={{color:'var(--accent)',letterSpacing:'2px',fontSize:'9px'}}>FOR INVESTIGATIVE USE ONLY</div>
+      </footer>
+    </div>
+  );
+}
+
+/* ── DASHBOARD ── */
+function Dashboard(){
+  const [inputAddr,setInputAddr]=useState('');
+  const [depth,setDepth]=useState('2');
+  const [minAmt,setMinAmt]=useState('0');
+  const [dir,setDir]=useState('both');
+  const [data,setData]=useState(null);
+  const [loading,setLoading]=useState(false);
+  const [loadStep,setLoadStep]=useState(0);
+  const [tab,setTab]=useState('graph');
+  const [selNode,setSelNode]=useState(null);
+  const [tooltip,setTooltip]=useState(null);
+  const [tooltipPos,setTooltipPos]=useState({x:0,y:0});
+  const [expandedTx,setExpandedTx]=useState(null);
+  const [toast,setToast]=useState(null);
+  const [zoomLevel,setZoomLevel]=useState(1);
+  const [extraNodes,setExtraNodes]=useState([]);
+  const cyRef=useRef(null);
+  const cyInst=useRef(null);
+
+  const STEPS=['Resolving wallet address...','Fetching transaction history...','Building fund flow graph...','Scoring risk signals...','Enriching OSINT labels...','Generating report...'];
+
+  const runAnalysis=useCallback((addr)=>{
+    setLoading(true);setSelNode(null);setTab('graph');setLoadStep(0);setExpandedTx(null);setExtraNodes([]);
+    let s=0;
+    const iv=setInterval(()=>{s++;if(s<STEPS.length)setLoadStep(s);else clearInterval(iv);},320);
+    setTimeout(()=>{clearInterval(iv);setData({...DEMO,rootWallet:addr||DEMO.rootWallet});setLoading(false);},2100);
+  },[]);
+
+  const loadDemo=()=>{setInputAddr(DEMO.rootWallet);runAnalysis(DEMO.rootWallet);};
+  const copyText=(text,msg)=>{navigator.clipboard?.writeText(text).catch(()=>{});setToast(msg||'Copied');};
+
+  const wallet=data?data.wallets[data.rootWallet]:null;
+  const counterparties=useMemo(()=>{
+    if(!data) return [];
+    const m={};
+    data.transactions.forEach(tx=>{if(tx.from===data.rootWallet) m[tx.to]=(m[tx.to]||0)+tx.amount_eth;});
+    return Object.entries(m).sort((a,b)=>b[1]-a[1]);
+  },[data]);
+  const maxCP=counterparties[0]?.[1]||1;
+
+  /* ── Graph with zoom-based node expansion ── */
+  useEffect(()=>{
+    if(!data||tab!=='graph') return;
+    const el=cyRef.current; if(!el) return;
+    if(cyInst.current){cyInst.current.destroy();cyInst.current=null;}
+
+    const buildElements=(zoom,expandedSet)=>{
+      const nodes=Object.entries(data.wallets).map(([addr,info])=>({
+        data:{id:addr,label:LABELS[addr]?.label||shortAddr(addr),isRoot:addr===data.rootWallet,category:info.category,risk:info.riskScore,color:nodeColor(addr,addr===data.rootWallet),size:addr===data.rootWallet?65:Math.max(28,Math.min(52,20+info.totalReceived*.5))}
+      }));
+      const edges=data.transactions.map((tx,i)=>({
+        data:{id:`e${i}`,source:tx.from,target:tx.to,amount:tx.amount_eth}
+      }));
+
+      /* Add child nodes when zoomed in */
+      if(zoom>1.6){
+        Object.entries(EXTENDED_WALLETS).forEach(([parentAddr,ext])=>{
+          ext.children.forEach(child=>{
+            if(!nodes.find(n=>n.data.id===child.addr)){
+              nodes.push({data:{id:child.addr,label:child.label,isRoot:false,category:child.category,risk:child.riskScore,color:child.category==='scam'?'#ef4444':'#2a4a6a',size:22,isChild:true}});
+              edges.push({data:{id:`child_${child.addr}`,source:parentAddr,target:child.addr,amount:0.5,isChild:true}});
+            }
+          });
+        });
+      }
+      return {nodes,edges};
+    };
+
+    const {nodes,edges}=buildElements(1,[]);
+
+    const cy=cytoscape({
+      container:el,elements:{nodes,edges},
+      style:[
+        {selector:'node',style:{'background-color':'data(color)','width':'data(size)','height':'data(size)','label':'data(label)','color':'#b0d4f0','font-size':'9px','font-family':'Space Mono,monospace','text-valign':'bottom','text-margin-y':'8px','text-outline-color':'#020810','text-outline-width':'3px','border-width':'1.5px','border-color':'data(color)','border-opacity':'.3','transition-property':'border-width border-opacity width height','transition-duration':'0.25s'}},
+        {selector:'node[?isRoot]',style:{'border-width':'2.5px','border-opacity':'1','background-color':'#00e5ff','box-shadow':'0 0 20px #00e5ff80'}},
+        {selector:'node[?isChild]',style:{'border-style':'dashed','border-opacity':'.6','opacity':'.85'}},
+        {selector:'node:selected',style:{'border-width':'3px','border-opacity':'1','overlay-opacity':'.1','overlay-color':'#00e5ff'}},
+        {selector:'edge',style:{'width':1.2,'line-color':'#0f2840','target-arrow-color':'#00e5ff','target-arrow-shape':'triangle','curve-style':'bezier','arrow-scale':1,'opacity':.5,'transition-property':'opacity line-color width','transition-duration':'0.2s'}},
+        {selector:'edge[?isChild]',style:{'line-style':'dashed','opacity':.35,'line-color':'#1a3050'}},
+        {selector:'edge:selected',style:{'line-color':'#00e5ff','opacity':1,'width':2}},
+        {selector:'edge.hl',style:{'opacity':1,'line-color':'#00e5ff','width':2}},
+        {selector:'node.dim',style:{'opacity':.25}},
+        {selector:'edge.dim',style:{'opacity':.08}},
+      ],
+      layout:{name:'cose',idealEdgeLength:140,nodeOverlap:24,padding:50,animate:true,animationDuration:900},
+      zoomingEnabled:true,panningEnabled:true,minZoom:.15,maxZoom:4,
+    });
+
+    /* Zoom-based node expansion — like Google Maps */
+    cy.on('zoom',()=>{
+      const z=cy.zoom();
+      setZoomLevel(z);
+      /* Add/remove child nodes based on zoom */
+      if(z>1.6){
+        Object.entries(EXTENDED_WALLETS).forEach(([parentAddr,ext])=>{
+          ext.children.forEach(child=>{
+            if(!cy.$(`#${child.addr}`).length){
+              const parentNode=cy.$(`#${parentAddr}`);
+              const pos=parentNode.length?parentNode.position():{x:Math.random()*400,y:Math.random()*400};
+              cy.add([
+                {group:'nodes',data:{id:child.addr,label:child.label,category:child.category,risk:child.riskScore,color:child.category==='scam'?'#ef4444':'#2a4a6a',size:20,isChild:true},position:{x:pos.x+(Math.random()-.5)*120,y:pos.y+(Math.random()-.5)*120}},
+                {group:'edges',data:{id:`child_${child.addr}`,source:parentAddr,target:child.addr,amount:0.5,isChild:true}}
+              ]);
+            }
+          });
+        });
+      } else {
+        Object.values(EXTENDED_WALLETS).forEach(ext=>{
+          ext.children.forEach(child=>{
+            cy.$(`#${child.addr}`).remove();
+            cy.$(`#child_${child.addr}`).remove();
+          });
+        });
+      }
+    });
+
+    cy.on('mouseover','node',e=>{
+      const id=e.target.id();
+      const cont=el.getBoundingClientRect();
+      const pan=cy.pan(),zoom=cy.zoom();
+      const pos=e.target.position();
+      setTooltip(id);
+      setTooltipPos({x:cont.left+pos.x*zoom+pan.x,y:cont.top+pos.y*zoom+pan.y});
+      cy.elements().addClass('dim');
+      e.target.removeClass('dim');
+      cy.edges().filter(ed=>ed.data('source')===id||ed.data('target')===id).removeClass('dim').addClass('hl');
+      cy.nodes().filter(n=>cy.edges().filter(ed=>(ed.data('source')===id&&ed.data('target')===n.id())||(ed.data('target')===id&&ed.data('source')===n.id())).length>0).removeClass('dim');
+    });
+    cy.on('mousemove','node',e=>{
+      const cont=el.getBoundingClientRect();
+      const pan=cy.pan(),zoom=cy.zoom();
+      const pos=e.target.position();
+      setTooltipPos({x:cont.left+pos.x*zoom+pan.x,y:cont.top+pos.y*zoom+pan.y});
+    });
+    cy.on('mouseout','node',()=>{setTooltip(null);cy.elements().removeClass('dim').removeClass('hl');});
+    cy.on('tap','node',e=>{
+      const id=e.target.id();
+      const allWallets={...DEMO.wallets};
+      Object.values(EXTENDED_WALLETS).forEach(ext=>ext.children.forEach(c=>{allWallets[c.addr]={...c};}));
+      const info=allWallets[id]||{};
+      setSelNode({addr:id,...info,label:LABELS[id]||{label:id,category:info.category||'unknown'}});
+    });
+    cy.on('tap',e=>{if(e.target===cy) setSelNode(null);});
+    cy.on('tap','edge',e=>{
+      const amt=e.target.data('amount');
+      if(amt) setToast(`${amt} ETH transferred on this edge`);
+    });
+
+    cyInst.current=cy;
+    return()=>{if(cyInst.current){cyInst.current.destroy();cyInst.current=null;}};
+  },[data,tab]);
+
+  const graphFit=()=>cyInst.current?.fit(60);
+  const graphReset=()=>{cyInst.current?.zoom(1);cyInst.current?.center();};
+  const graphHighlight=()=>{
+    if(!cyInst.current) return;
+    cyInst.current.$('#0xsuspect001,#0xtornado001').select();
+    setToast('Suspicious nodes selected');
+  };
+  const zoomIn=()=>cyInst.current?.zoom({level:Math.min(4,(cyInst.current?.zoom()||1)*1.5),renderedPosition:{x:cyRef.current.clientWidth/2,y:cyRef.current.clientHeight/2}});
+  const zoomOut=()=>cyInst.current?.zoom({level:Math.max(.15,(cyInst.current?.zoom()||1)*.67),renderedPosition:{x:cyRef.current.clientWidth/2,y:cyRef.current.clientHeight/2}});
+
+  return(
+    <div className="dashboard">
+      <div className="sidebar">
+        <div className="card">
+          <div className="card-title">INVESTIGATION TARGET</div>
+          <div className="input-group">
+            <div className="input-label">WALLET ADDRESS</div>
+            <input className="input-field" placeholder="0x... (Enter to analyze)" value={inputAddr}
+              onChange={e=>setInputAddr(e.target.value)}
+              onKeyDown={e=>e.key==='Enter'&&inputAddr.trim()&&runAnalysis(inputAddr.trim())}
+              spellCheck={false}/>
+          </div>
+          <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:'8px',marginTop:'8px'}}>
+            <div className="input-group">
+              <div className="input-label">TRACE DEPTH</div>
+              <select className="input-field" value={depth} onChange={e=>setDepth(e.target.value)}>
+                <option>1-hop</option><option>2-hop</option><option>3-hop</option>
+              </select>
+            </div>
+            <div className="input-group">
+              <div className="input-label">DIRECTION</div>
+              <select className="input-field" value={dir} onChange={e=>setDir(e.target.value)}>
+                <option value="both">Both</option><option value="out">Outgoing</option><option value="in">Incoming</option>
+              </select>
+            </div>
+          </div>
+          <div className="input-group" style={{marginTop:'8px'}}>
+            <div className="input-label">MIN AMOUNT (ETH)</div>
+            <input className="input-field" type="number" min="0" step="0.1" value={minAmt} onChange={e=>setMinAmt(e.target.value)} placeholder="0.0"/>
+          </div>
+          <div style={{display:'flex',gap:'8px',marginTop:'12px'}}>
+            <button className="analyze-btn" onClick={()=>runAnalysis(inputAddr)} disabled={loading}>
+              {loading?<><span style={{width:'12px',height:'12px',border:'2px solid rgba(0,0,0,.3)',borderTopColor:'#000',borderRadius:'50%',animation:'spin 1s linear infinite',display:'inline-block'}}/>ANALYZING...</>:'▶ ANALYZE'}
+            </button>
+            <button className="demo-btn" onClick={loadDemo} disabled={loading}>⬡ DEMO</button>
+          </div>
+        </div>
+
+        {wallet&&(
+          <div className="card fade-in">
+            <div className="card-title"><span className="live-dot" style={{marginRight:'6px'}}/>WALLET SUMMARY</div>
+            <div className="address-wrap">
+              <div className="address-display" onClick={()=>copyText(data.rootWallet,'Address copied')} title="Click to copy">{data.rootWallet}</div>
+              <div className="copy-hint">↑ click to copy</div>
+            </div>
+            <div className="metric-grid">
+              {[[formatEth(wallet.totalReceived),'TOTAL IN'],[formatEth(wallet.totalSent),'TOTAL OUT'],[wallet.txCount,'TRANSACTIONS'],[wallet.firstSeen,'FIRST ACTIVE']].map(([v,l])=>(
+                <div className="metric" key={l}><div className="metric-val" style={{fontSize:l==='FIRST ACTIVE'?'11px':'16px'}}>{v}</div><div className="metric-lbl">{l}</div></div>
+              ))}
+            </div>
+            <div style={{marginTop:'14px'}}>
+              <div style={{display:'flex',justifyContent:'space-between',marginBottom:'5px',fontSize:'10px'}}>
+                <span style={{color:'var(--muted)'}}>RISK SCORE</span>
+                <span style={{color:riskColor(wallet.riskScore),fontWeight:'700'}}>{wallet.riskScore} / 100</span>
+              </div>
+              <div className="risk-bar-wrap">
+                <div className={`risk-bar ${riskClass(wallet.riskScore)}`} style={{width:`${wallet.riskScore}%`}}>
+                  <div className="risk-shine"/>
+                </div>
+              </div>
+              <div style={{display:'flex',gap:'6px',marginTop:'8px',flexWrap:'wrap'}}>
+                <span className={`badge ${riskClass(wallet.riskScore)}`}>{riskLabel(wallet.riskScore)} RISK</span>
+                <span className={`badge ${catBadge(wallet.category)}`}>{wallet.category.toUpperCase()}</span>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {data&&(
+          <div className="card fade-in">
+            <div className="card-title">RISK INDICATORS ({data.riskFlags.length})</div>
+            {data.riskFlags.map((f,i)=>(
+              <div className="flag-item" key={i} title={`+${f.score} risk points`}>
+                <div className="flag-icon">{f.icon}</div>
+                <div>
+                  <div className="flag-title">{f.label} <span style={{color:'var(--danger)',fontSize:'8px'}}>+{f.score}pts</span></div>
+                  <div className="flag-desc">{f.desc}</div>
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
+
+        {selNode&&(
+          <div className="node-panel fade-fast">
+            <div className="node-panel-title">NODE INSPECTOR<span className="node-close" onClick={()=>setSelNode(null)}>✕</span></div>
+            <div className="address-wrap">
+              <div className="address-display" onClick={()=>copyText(selNode.addr,'Copied')} title="Click to copy" style={{fontSize:'8px'}}>{selNode.addr}</div>
+              <div className="copy-hint">↑ click to copy</div>
+            </div>
+            <div style={{display:'flex',gap:'6px',flexWrap:'wrap',margin:'10px 0'}}>
+              {selNode.label&&<span className={`badge ${catBadge(selNode.label.category||selNode.category)}`}>{selNode.label.label||selNode.label}</span>}
+              <span className={`badge ${riskClass(selNode.riskScore||0)}`}>{riskLabel(selNode.riskScore||0)} RISK</span>
+            </div>
+            <div className="metric-grid">
+              <div className="metric"><div className="metric-val" style={{fontSize:'12px'}}>{formatEth(selNode.totalReceived||0)}</div><div className="metric-lbl">RECEIVED</div></div>
+              <div className="metric"><div className="metric-val" style={{fontSize:'12px'}}>{formatEth(selNode.totalSent||0)}</div><div className="metric-lbl">SENT</div></div>
+              <div className="metric"><div className="metric-val" style={{fontSize:'12px',color:riskColor(selNode.riskScore||0)}}>{selNode.riskScore||0}/100</div><div className="metric-lbl">RISK</div></div>
+              <div className="metric"><div className="metric-val" style={{fontSize:'12px'}}>{selNode.txCount||0}</div><div className="metric-lbl">TXS</div></div>
+            </div>
+            {selNode.firstSeen&&<div style={{fontSize:'9px',color:'var(--muted)',marginTop:'10px'}}>Active: {selNode.firstSeen} → {selNode.lastSeen||'present'}</div>}
+            <button style={{width:'100%',marginTop:'12px',background:'rgba(0,229,255,.06)',border:'1px solid rgba(0,229,255,.2)',color:'var(--accent)',fontFamily:'var(--font-mono)',fontSize:'10px',padding:'8px',cursor:'pointer',letterSpacing:'1px',transition:'all .25s'}}
+              onMouseOver={e=>e.currentTarget.style.cssText+='background:rgba(0,229,255,.14);box-shadow:0 0 16px rgba(0,229,255,.2)'}
+              onMouseOut={e=>e.currentTarget.style.cssText='width:100%;margin-top:12px;background:rgba(0,229,255,.06);border:1px solid rgba(0,229,255,.2);color:var(--accent);font-family:var(--font-mono);font-size:10px;padding:8px;cursor:pointer;letter-spacing:1px;transition:all .25s'}
+              onClick={()=>runAnalysis(selNode.addr)}>
+              ▶ INVESTIGATE THIS WALLET
+            </button>
+          </div>
+        )}
+      </div>
+
+      <div className="main-panel">
+        {!data&&!loading&&(
+          <div className="empty-state">
+            <div style={{fontSize:'52px',opacity:.08}}>⬡</div>
+            <div style={{fontFamily:'var(--font-head)',fontSize:'18px',color:'var(--muted)'}}>No Investigation Active</div>
+            <div style={{fontSize:'11px',color:'#0d2840',maxWidth:'280px',lineHeight:'2'}}>Enter a wallet address and press Analyze, or load the demo case to trace fund flows.</div>
+            <button className="btn-primary" onClick={loadDemo}>⬡ LOAD DEMO CASE</button>
+          </div>
+        )}
+
+        {loading&&(
+          <div className="empty-state">
+            <div className="spinner"/>
+            <div style={{fontSize:'12px',color:'var(--accent)',letterSpacing:'2px'}}>ANALYZING WALLET</div>
+            <div className="pulse" style={{fontSize:'10px',color:'var(--muted)',letterSpacing:'1px'}}>{STEPS[loadStep]}</div>
+            <div className="progress-wrap"><div className="progress-bar" style={{width:`${(loadStep+1)/STEPS.length*100}%`}}/></div>
+          </div>
+        )}
+
+        {data&&!loading&&(
+          <>
+            <div className="tabs">
+              {[['graph','🕸 GRAPH'],['timeline','📈 TIMELINE'],['transactions','⬡ TRANSACTIONS'],['counterparties','◎ COUNTERPARTIES'],['report','📄 REPORT']].map(([id,lbl])=>(
+                <div key={id} className={`tab${tab===id?' active':''}`} onClick={()=>setTab(id)}>{lbl}</div>
+              ))}
+            </div>
+
+            {tab==='graph'&&(
+              <div className="fade-in">
+                <div className="graph-wrap">
+                  <div className="graph-controls">
+                    <span style={{fontSize:'9px',color:'var(--muted)',letterSpacing:'1px',marginRight:'4px'}}>VIEW:</span>
+                    {[['⊕ FIT',graphFit],['− ZOOM OUT',zoomOut],['+ ZOOM IN',zoomIn],['⊙ RESET',graphReset],['⚠ FLAG SUSPICIOUS',graphHighlight]].map(([lbl,fn])=>(
+                      <button key={lbl} className="graph-btn" onClick={fn}>{lbl}</button>
+                    ))}
+                    <span style={{marginLeft:'auto',fontSize:'9px',color:'var(--muted)'}}>
+                      {Object.keys(data.wallets).length}{zoomLevel>1.6?` + ${Object.values(EXTENDED_WALLETS).reduce((a,e)=>a+e.children.length,0)}`:''} NODES · {data.transactions.length} EDGES
+                    </span>
+                  </div>
+                  <div ref={cyRef} id="cy"/>
+                  {data&&<div className="zoom-indicator">ZOOM {Math.round(zoomLevel*100)}% {zoomLevel>1.6?'· SUB-WALLETS VISIBLE':zoomLevel<0.6?'· OVERVIEW MODE':'· DETAIL MODE'}</div>}
+                  <div className="graph-hint">Zoom in past 160% to reveal hidden sub-wallets · Hover=details · Click=inspect</div>
+                  <div className="graph-legend">
+                    {[['#00e5ff','Root'],['#00ff88','Donation'],['#a78bfa','Exchange'],['#ef4444','Flagged/Mixer'],['#3d6080','Unknown'],['#2a4a6a','Sub-wallet (zoom in)']].map(([c,l])=>(
+                      <div className="legend-item" key={l}><div className="legend-dot" style={{background:c}}/>{l}</div>
+                    ))}
+                  </div>
+                </div>
+              </div>
+            )}
+
+            {tab==='timeline'&&(
+              <div className="card fade-in">
+                <div className="card-title">TRANSACTION ACTIVITY TIMELINE</div>
+                <div style={{display:'grid',gridTemplateColumns:'repeat(4,1fr)',gap:'8px',marginBottom:'22px'}}>
+                  {[['Total Volume','36.4 ETH','var(--accent)'],['Peak Day','Jan 03','var(--warn)'],['Avg/Day','3.3 ETH','var(--success)'],['Active Days','9/12','var(--text)']].map(([l,v,c])=>(
+                    <div className="metric" key={l}><div className="metric-val" style={{color:c,fontSize:'15px'}}>{v}</div><div className="metric-lbl">{l}</div></div>
+                  ))}
+                </div>
+                <div className="card-title" style={{marginBottom:'8px'}}>DAILY VOLUME (ETH)</div>
+                <div style={{paddingBottom:'22px'}}>
+                  <div className="tl-bar-group">
+                    {data.timelineData.map((d,i)=>{
+                      const maxV=Math.max(...data.timelineData.map(x=>x.vol));
+                      const h=maxV>0?(d.vol/maxV)*100:0;
+                      const isSpike=d.vol===maxV&&d.vol>0;
+                      return(
+                        <div key={i} className="tl-bar vol-bar" style={{height:`${h}%`,borderTopColor:isSpike?'var(--warn)':'var(--accent)',background:isSpike?'rgba(245,158,11,.2)':'rgba(0,229,255,.18)'}}>
+                          <div className="tl-bar-tip">
+                            <div style={{color:isSpike?'var(--warn)':'var(--accent)',fontWeight:'700'}}>{d.vol} ETH</div>
+                            <div style={{color:'var(--muted)',marginTop:'2px'}}>{d.date}</div>
+                            {isSpike&&<div style={{color:'var(--warn)',marginTop:'4px'}}>⚡ VOLUME SPIKE</div>}
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                  <div className="tl-labels">{data.timelineData.map((d,i)=><div key={i} className="tl-label">{d.date}</div>)}</div>
+                </div>
+                <div className="card-title" style={{marginTop:'16px',marginBottom:'8px'}}>TRANSACTION COUNT</div>
+                <div style={{paddingBottom:'22px'}}>
+                  <div className="tl-bar-group" style={{height:'50px'}}>
+                    {data.timelineData.map((d,i)=>{
+                      const maxC=Math.max(...data.timelineData.map(x=>x.count));
+                      const h=maxC>0?(d.count/maxC)*100:0;
+                      return(
+                        <div key={i} className="tl-bar count-bar" style={{height:`${h}%`}}>
+                          <div className="tl-bar-tip"><div style={{color:'var(--accent2)',fontWeight:'700'}}>{d.count} tx{d.count!==1?'s':''}</div><div style={{color:'var(--muted)'}}>{d.date}</div></div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                  <div className="tl-labels">{data.timelineData.map((d,i)=><div key={i} className="tl-label">{d.date}</div>)}</div>
+                </div>
+                <div style={{padding:'13px',background:'rgba(2,8,16,.7)',border:'1px solid rgba(245,158,11,.2)',borderLeft:'3px solid var(--warn)',marginTop:'8px'}}>
+                  <div style={{fontSize:'10px',fontWeight:'700',color:'var(--warn)',marginBottom:'5px'}}>⚡ ANOMALY — JAN 03</div>
+                  <div style={{fontSize:'10px',color:'var(--muted)',lineHeight:'1.9'}}>Volume spike of 24.5 ETH — 12× the 14-day average. Two txs fired 33 min apart. Consistent with automated fund-dispersal.</div>
+                </div>
+              </div>
+            )}
+
+            {tab==='transactions'&&(
+              <div className="card fade-in">
+                <div className="card-title">RAW TRANSACTIONS — {data.transactions.length} RECORDS</div>
+                <div style={{fontSize:'10px',color:'var(--muted)',marginBottom:'10px'}}>Click row to expand · Click any field to copy · Red border = high-risk destination</div>
+                <div style={{display:'grid',gridTemplateColumns:'1fr 80px 66px 84px',gap:'8px',padding:'5px 12px 9px',borderBottom:'1px solid rgba(0,229,255,.06)',marginBottom:'2px'}}>
+                  {['FROM → TO','AMOUNT','RISK','DATE'].map(h=><div key={h} style={{fontSize:'8px',color:'var(--muted)',letterSpacing:'1px'}}>{h}</div>)}
+                </div>
+                <div style={{maxHeight:'360px',overflowY:'auto'}}>
+                  {data.transactions.map((tx,i)=>{
+                    const fL=LABELS[tx.from]?.label||shortAddr(tx.from);
+                    const tL=LABELS[tx.to]?.label||shortAddr(tx.to);
+                    const toInfo=data.wallets[tx.to]||{};
+                    const isExp=expandedTx===i;
+                    const isSusp=(toInfo.riskScore||0)>=70;
+                    return(
+                      <React.Fragment key={i}>
+                        <div className="tx-row" style={isSusp?{borderLeft:'2px solid rgba(239,68,68,.5)',paddingLeft:'10px'}:{}} onClick={()=>setExpandedTx(isExp?null:i)}>
+                          <div>
+                            <div style={{fontSize:'9px',color:'var(--muted)'}}>{fL} <span style={{color:'var(--accent)'}}>→</span> <span style={{color:isSusp?'var(--danger)':'var(--text)'}}>{tL}</span></div>
+                            <div className="tx-hash">{isExp?'▲ collapse':'▼ expand'} · {tx.tx_hash.slice(0,22)}...</div>
+                          </div>
+                          <div className="tx-amount">{tx.amount_eth}Ξ</div>
+                          <div style={{textAlign:'center'}}><span className={`badge ${riskClass(toInfo.riskScore||0)}`} style={{fontSize:'8px'}}>{riskLabel(toInfo.riskScore||0)}</span></div>
+                          <div className="tx-time">{new Date(tx.timestamp).toLocaleDateString()}</div>
+                        </div>
+                        {isExp&&(
+                          <div className="tx-expanded">
+                            {[['TX Hash',tx.tx_hash],['From',tx.from],['To',tx.to],['Amount',`${tx.amount_eth} ETH`],['Gas Fee',`${tx.gas} ETH`],['Block',String(tx.block)],['Timestamp',new Date(tx.timestamp).toLocaleString()],['Label',LABELS[tx.to]?.label||'Unlabeled']].map(([k,v])=>(
+                              <div className="tx-field" key={k}>
+                                <div className="tx-field-key">{k}</div>
+                                <div className="tx-field-val" onClick={()=>copyText(v,`${k} copied`)} title="Click to copy">{v}</div>
+                              </div>
+                            ))}
+                          </div>
+                        )}
+                      </React.Fragment>
+                    );
+                  })}
+                </div>
+              </div>
+            )}
+
+            {tab==='counterparties'&&(
+              <div className="card fade-in">
+                <div className="card-title">TOP COUNTERPARTIES BY VOLUME</div>
+                <div style={{fontSize:'10px',color:'var(--muted)',marginBottom:'18px'}}>Wallets that received funds directly from root · Click to inspect</div>
+                {counterparties.map(([addr,vol])=>{
+                  const lbl=LABELS[addr];
+                  const info=data.wallets[addr]||{};
+                  const pct=(vol/maxCP)*100;
+                  return(
+                    <div key={addr} className="cp-item" onClick={()=>{setSelNode({addr,...info,label:lbl});setTab('graph');}}>
+                      <div style={{display:'flex',alignItems:'center',gap:'10px',marginBottom:'3px'}}>
+                        <div style={{fontSize:'10px',color:'var(--text)',width:'130px',overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}} title={addr}>{lbl?.label||shortAddr(addr)}</div>
+                        <div className="cp-bar-bg"><div className="cp-bar-fill" style={{width:`${pct}%`,background:lbl?.color||'var(--accent)',opacity:.7}}/></div>
+                        <div style={{fontSize:'9px',color:'var(--muted)',width:'50px',textAlign:'right'}}>{vol.toFixed(2)}Ξ</div>
+                        <span className={`badge ${riskClass(info.riskScore||0)}`} style={{fontSize:'8px'}}>{riskLabel(info.riskScore||0)}</span>
+                      </div>
+                      {lbl&&<div style={{fontSize:'8px',color:lbl.color,paddingLeft:'2px'}}>{lbl.category.toUpperCase()} · {lbl.label}</div>}
+                    </div>
+                  );
+                })}
+                <div style={{marginTop:'18px',padding:'14px',background:'rgba(2,8,16,.7)',border:'1px solid rgba(0,229,255,.08)'}}>
+                  <div style={{fontSize:'9px',color:'var(--accent)',marginBottom:'10px',letterSpacing:'1.5px'}}>EXPOSURE BREAKDOWN</div>
+                  {[['Exchange exposure','18.4 ETH','var(--accent2)'],['Scam address exposure','7.9 ETH','var(--danger)'],['Mixer (indirect)','17.1 ETH','var(--danger)'],['Clean / donation','3.6 ETH','var(--success)']].map(([l,v,c])=>(
+                    <div key={l} style={{display:'flex',justifyContent:'space-between',padding:'5px 0',borderBottom:'1px solid rgba(15,32,53,.6)',fontSize:'10px'}}>
+                      <span style={{color:'var(--muted)'}}>{l}</span><span style={{color:c,fontWeight:'700'}}>{v}</span>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+
+            {tab==='report'&&(
+              <div className="card fade-in">
+                <div className="card-title">INVESTIGATION REPORT</div>
+                <div style={{background:'rgba(2,8,16,.8)',border:'1px solid rgba(0,229,255,.08)',padding:'14px',marginBottom:'22px',display:'grid',gridTemplateColumns:'repeat(3,1fr)',gap:'14px'}}>
+                  {[['REPORT ID','CT-2024-0108-001','var(--accent)'],['GENERATED',new Date().toLocaleString(),'var(--text)'],['RISK VERDICT','HIGH RISK','var(--danger)']].map(([l,v,c])=>(
+                    <div key={l}><div style={{fontSize:'9px',color:'var(--muted)',marginBottom:'4px',letterSpacing:'1px'}}>{l}</div><div style={{fontSize:'11px',color:c,fontWeight:'700'}}>{v}</div></div>
+                  ))}
+                </div>
+                {[
+                  {n:'1',title:'EXECUTIVE SUMMARY',text:`Wallet ${shortAddr(data.rootWallet)} assessed as HIGH RISK (72/100). Multiple suspicious indicators: rapid fund dispersal to 5 addresses in 48h, direct interaction with flagged scam address, indirect routing through Tornado Cash (OFAC-sanctioned mixer).`},
+                  {n:'2',title:'KEY FINDINGS',items:['10 transactions across 7 unique wallets','36.4 ETH volume in 7-day window','Direct transfer to 1 known scam address','Indirect Tornado Cash exposure via 2 wallets','24.5 ETH spike Jan 03 — 12× daily average','Two txs fired 33 minutes apart Jan 03']},
+                  {n:'4',title:'COUNTERPARTY ANALYSIS',text:`Tether USDT: 18.4 ETH. Suspect wallet: 7.9 ETH. ETH Foundation: 3.6 ETH (possible legitimacy washing). The ETH Foundation donation may be a deliberate "credibility signal" — a technique used to build apparent legitimacy in on-chain history while routing funds through mixers via other paths.`},
+                ].map(s=>(
+                  <div className="report-section" key={s.n}>
+                    <div className="report-title">{s.n}. {s.title}</div>
+                    {s.text&&<div className="report-text">{s.text}</div>}
+                    {s.items&&<ul style={{paddingLeft:'14px',marginTop:'4px'}}>{s.items.map(item=><li key={item} style={{fontSize:'11px',color:'var(--muted)',lineHeight:'2.1'}}>{item}</li>)}</ul>}
+                  </div>
+                ))}
+                <div className="report-section">
+                  <div className="report-title">3. SUSPICIOUS FUND PATHS</div>
+                  <div className="report-path">
+                    <span style={{color:'var(--danger)'}}>ROOT</span> → <span style={{color:'var(--danger)'}}>0xsuspect001</span> (6.1Ξ, Jan 03) → <span style={{color:'var(--danger)'}}>Tornado Cash</span> (5.9Ξ, Jan 05){'\n'}
+                    <span style={{color:'var(--danger)'}}>ROOT</span> → <span style={{color:'var(--warn)'}}>0xwallet003</span> (4.8Ξ, Jan 04) → <span style={{color:'var(--danger)'}}>Tornado Cash</span> (11.2Ξ, Jan 07){'\n'}
+                    <span style={{color:'var(--danger)'}}>ROOT</span> → <span style={{color:'var(--warn)'}}>0xwallet002</span> (3.2Ξ, Jan 04) → <span style={{color:'var(--success)'}}>Tether USDT</span> (7.8Ξ, Jan 06){'\n'}
+                    <span style={{color:'var(--danger)'}}>ROOT</span> → <span style={{color:'var(--success)'}}>ETH Foundation</span> (3.6Ξ total) — possible legitimacy washing
+                  </div>
+                </div>
+                <div className="report-section" style={{borderLeftColor:'var(--danger)'}}>
+                  <div className="report-title">5. RECOMMENDATION</div>
+                  <div style={{padding:'12px',background:'rgba(239,68,68,.04)',border:'1px solid rgba(239,68,68,.15)'}}>
+                    <ul style={{paddingLeft:'14px'}}>{['Escalate for senior analyst review immediately','Cross-reference Chainalysis / Elliptic databases','File SAR (Suspicious Activity Report)','Monitor Tornado Cash withdrawal timing windows','Preserve blockchain evidence for legal proceedings'].map(item=><li key={item} style={{fontSize:'11px',color:'var(--muted)',lineHeight:'2.1'}}>{item}</li>)}</ul>
+                  </div>
+                </div>
+                <div style={{display:'flex',gap:'10px',marginTop:'18px'}}>
+                  <button className="btn-primary" style={{flex:1,padding:'11px',fontSize:'11px'}} onClick={()=>setToast('PDF export simulated (demo mode)')}>⬇ EXPORT REPORT</button>
+                  <button className="btn-secondary" style={{flex:1,padding:'11px',fontSize:'11px'}} onClick={()=>copyText(`ChainTrace Report\nWallet: ${data.rootWallet}\nRisk: 72/100 HIGH\n${new Date().toLocaleString()}`,'Summary copied')}>⎘ COPY SUMMARY</button>
+                </div>
+              </div>
+            )}
+          </>
+        )}
+      </div>
+
+      {tooltip&&<NodeTooltip node={tooltip} pos={tooltipPos}/>}
+      {toast&&<Toast msg={toast} onDone={()=>setToast(null)}/>}
+    </div>
+  );
+}
+
+/* ── DOCS PAGE ── */
+function DocsPage(){
+  const [activeSection,setActiveSection]=useState('overview');
+  const [expandedNews,setExpandedNews]=useState(null);
+
+  const NEWS=[
+    {id:1,severity:'high',title:'Tornado Cash Sanctions Extended — OFAC Update Jan 2024',date:'Jan 15, 2024',source:'OFAC / FinCEN',body:'The U.S. Office of Foreign Assets Control has extended sanctions on Tornado Cash smart contract addresses. Any interaction with these contracts by U.S. persons remains prohibited. New wallet addresses have been added to the SDN list: 0x77777... and 0x94be...'},
+    {id:2,severity:'high',title:'$72M Radiant Capital Exploit — Cross-chain Bridge Attack',date:'Jan 09, 2024',source:'Radiant Security',body:'Attackers exploited a reentrancy vulnerability in the Radiant Capital lending protocol, draining approximately $72M in USDC, ETH, and WBTC. Funds were rapidly bridged to Ethereum and split across 14 intermediary wallets before partial mixer interaction.'},
+    {id:3,severity:'med',title:'Crypto Mixer "Sinbad" Seized by Europol — New Mixer Identified',date:'Dec 21, 2023',source:'Europol',body:'Following the Sinbad.io seizure, investigators identified a successor service operating at a new .onion address. The service uses layered transactions with 3-hop delays. ChainTrace patterns match: high fan-out, rapid split, nighttime activity clustering.'},
+    {id:4,severity:'med',title:'North Korea Lazarus Group — Q4 2023 Activity Report',date:'Jan 03, 2024',source:'Chainalysis / FBI',body:'Lazarus Group attributed to $600M in crypto theft in 2023. Signature patterns: large initial heist, immediate bridge to Ethereum, multi-stage mixing using Tornado Cash and OTC desks. ChainTrace risk flags triggered: mixer interaction + unusual volume + rapid fan-out.'},
+    {id:5,severity:'low',title:'EIP-7702 Draft — New Wallet Standard with OSINT Implications',date:'Jan 11, 2024',source:'Ethereum Foundation',body:'New Ethereum Improvement Proposal introduces smart-contract wallet addresses that can appear as EOAs. This complicates traditional OSINT by making it harder to distinguish between smart-contract interaction and simple transfers.'},
+    {id:6,severity:'info',title:'ChainTrace v1.1 — Zoom-level Graph Expansion Released',date:'Today',source:'ChainTrace Team',body:'New feature: Graph now supports Google Maps-style zoom-based node expansion. Zoom in past 160% to reveal sub-wallets and second-degree connections. Zoom out for overview mode. Improves investigation of complex fund-splitting patterns.'},
+  ];
+
+  const SECTIONS={
+    overview:{title:'Overview',content:(
+      <>
+        <div className="docs-h1">ChainTrace Documentation</div>
+        <div style={{fontSize:'11px',color:'var(--muted)',marginBottom:'24px',letterSpacing:'.5px'}}>Version 1.0 · Academic Prototype · For Investigative Use Only</div>
+        <div className="docs-alert info">ChainTrace is a blockchain OSINT tool for investigative and academic use. It traces Ethereum fund flows, scores risk, enriches addresses, and generates forensic reports.</div>
+        <div className="docs-h2">What is ChainTrace?</div>
+        <div className="docs-p">ChainTrace is a blockchain forensics dashboard designed for OSINT analysts, cybercrime investigators, and financial compliance professionals. It visualizes how funds move between Ethereum wallets across multiple hops, identifies suspicious patterns using a rule-based risk engine, and enriches wallet addresses with publicly available intelligence labels.</div>
+        <div className="docs-h2">Core Capabilities</div>
+        <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:'10px',margin:'14px 0'}}>
+          {[['🕸️','Multi-hop Tracing','Follow funds up to 5 hops deep'],['⚡','Risk Scoring','100-point rule-based engine'],['🏷️','OSINT Enrichment','Exchange, mixer, scam labels'],['📊','Timeline Analysis','Volume spike detection'],['🔍','Zoom Graph','Google Maps-style depth reveal'],['📄','Auto Reports','Exportable forensic summaries']].map(([icon,t,d])=>(
+            <div key={t} className="stat-block"><div style={{fontSize:'16px',marginBottom:'6px'}}>{icon}</div><div style={{fontSize:'11px',fontWeight:'700',color:'var(--text)',marginBottom:'3px'}}>{t}</div><div style={{fontSize:'10px',color:'var(--muted)'}}>{d}</div></div>
+          ))}
+        </div>
+        <div className="docs-h2">Supported Networks</div>
+        <div className="docs-p">Currently supports Ethereum mainnet (EVM-compatible). Planned: Polygon, BSC, Solana, Arbitrum, Optimism.</div>
+        <div style={{display:'flex',gap:'8px',flexWrap:'wrap',marginTop:'8px'}}>
+          {['Ethereum','Polygon (planned)','BSC (planned)','Arbitrum (planned)','Solana (planned)'].map(t=><span key={t} className="docs-tag">{t}</span>)}
+        </div>
+      </>
+    )},
+    riskEngine:{title:'Risk Engine',content:(
+      <>
+        <div className="docs-h1">Risk Scoring Engine</div>
+        <div className="docs-h2">How Scores Are Calculated</div>
+        <div className="docs-p">ChainTrace uses a rule-based scoring system that evaluates 5 primary risk signals. Each signal contributes a weighted number of points to the final score out of 100.</div>
+        <div className="docs-h3">Risk Signals</div>
+        {[
+          ['Rapid Consecutive Transfers','+18 pts','≥2 transactions within 10 minutes, or ≥3 within 60 minutes. Indicates automated scripted behavior.'],
+          ['High Fan-out Pattern','+16 pts','≥4 unique destination addresses within 48 hours. Classic fund-splitting / money mule pattern.'],
+          ['Mixer Interaction','+20 pts','Direct or indirect (≤2 hops) interaction with known mixer services (Tornado Cash, Sinbad, Blender.io).'],
+          ['Known Scam Address','+12 pts','Direct transfer to an address in the OSINT threat intelligence database tagged as phishing, rug-pull, or scam.'],
+          ['Unusual Volume Spike','+6 pts','Single-day volume >5× the wallet\'s 14-day rolling average. Potential sudden fund dump signal.'],
+        ].map(([name,pts,desc])=>(
+          <div key={name} style={{padding:'12px',background:'rgba(2,8,16,.6)',border:'1px solid rgba(0,229,255,.08)',marginBottom:'8px'}}>
+            <div style={{display:'flex',justifyContent:'space-between',marginBottom:'5px'}}>
+              <span style={{fontSize:'11px',fontWeight:'700',color:'var(--text)'}}>{name}</span>
+              <span style={{fontSize:'10px',color:'var(--danger)',fontWeight:'700'}}>{pts}</span>
+            </div>
+            <div style={{fontSize:'10px',color:'var(--muted)',lineHeight:'1.8'}}>{desc}</div>
+          </div>
+        ))}
+        <div className="docs-h3">Risk Levels</div>
+        <div style={{display:'grid',gridTemplateColumns:'repeat(3,1fr)',gap:'8px',margin:'10px 0'}}>
+          {[['LOW','0–39','Normal wallet activity. No significant indicators.','var(--success)'],['MEDIUM','40–69','Some suspicious patterns. Manual review recommended.','var(--warn)'],['HIGH','70–100','Multiple indicators. Escalate immediately.','var(--danger)']].map(([lbl,range,desc,c])=>(
+            <div key={lbl} style={{padding:'12px',border:`1px solid ${c}22`,background:`${c}08`}}>
+              <div style={{fontSize:'12px',fontWeight:'700',color:c,marginBottom:'4px'}}>{lbl}</div>
+              <div style={{fontSize:'10px',color:'var(--muted)',marginBottom:'6px'}}>{range} points</div>
+              <div style={{fontSize:'9px',color:'var(--muted)',lineHeight:'1.7'}}>{desc}</div>
+            </div>
+          ))}
+        </div>
+      </>
+    )},
+    api:{title:'API Reference',content:(
+      <>
+        <div className="docs-h1">API Reference</div>
+        <div className="docs-alert info">Base URL: <code style={{color:'var(--accent)'}}>http://localhost:8000/api/v1</code> · All responses are JSON.</div>
+        <div className="docs-h2">Endpoints</div>
+        <div style={{border:'1px solid rgba(0,229,255,.08)',marginTop:'14px'}}>
+          <div style={{display:'grid',gridTemplateColumns:'110px 80px 1fr',gap:'12px',padding:'8px 12px',borderBottom:'1px solid rgba(0,229,255,.06)',background:'rgba(2,8,16,.7)'}}>
+            {['ENDPOINT','METHOD','DESCRIPTION'].map(h=><div key={h} style={{fontSize:'8px',color:'var(--muted)',letterSpacing:'1.5px'}}>{h}</div>)}
+          </div>
+          {[
+            ['/analyze-wallet','POST','Submit a wallet address for full analysis. Body: {address, depth, min_amount, direction}. Returns wallet summary, transactions, risk score, labels.'],
+            ['/wallet/{addr}','GET','Retrieve cached wallet summary for a previously analyzed address. Returns balance, tx count, risk score, category.'],
+            ['/graph/{addr}','GET','Get graph nodes and edges for the given address. Query params: depth (1-5), min_eth. Returns nodes[] and edges[].'],
+            ['/labels/{addr}','GET','Look up OSINT labels for an address. Returns label, category, confidence, source, last_updated.'],
+            ['/report/{addr}','GET','Generate and retrieve the investigation report for an address. Returns structured JSON report with all sections.'],
+            ['/search','GET','Search labeled addresses by keyword. Query: q={keyword}. Returns matching labeled wallets.'],
+          ].map(([ep,method,desc])=>(
+            <div key={ep} className="api-row">
+              <div style={{fontSize:'9px',color:'var(--accent)',fontFamily:'var(--font-mono)'}}>{ep}</div>
+              <div className={`method-${method.toLowerCase()}`} style={{fontSize:'9px'}}>{method}</div>
+              <div style={{fontSize:'9px',color:'var(--muted)',lineHeight:'1.7'}}>{desc}</div>
+            </div>
+          ))}
+        </div>
+        <div className="docs-h3">Example Request</div>
+        <div className="docs-code">{`POST /api/v1/analyze-wallet
+Content-Type: application/json
+
+{
+  "address": "0xAb5801a7D398351b8bE11C439e05C5B3259aeC9B",
+  "depth": 2,
+  "min_amount": 0.1,
+  "direction": "both"
+}`}</div>
+        <div className="docs-h3">Example Response</div>
+        <div className="docs-code">{`{
+  "wallet": {
+    "address": "0xAb5801a...",
+    "risk_score": 72,
+    "risk_level": "HIGH",
+    "total_received": 148.7,
+    "total_sent": 141.2,
+    "tx_count": 87,
+    "category": "unknown",
+    "label": null
+  },
+  "risk_flags": ["rapid_transfers","fan_out","mixer_interaction"],
+  "graph": { "nodes": [...], "edges": [...] },
+  "report_id": "CT-2024-0108-001"
+}`}</div>
+      </>
+    )},
+    threatIntel:{title:'Threat Intel & News',content:(
+      <>
+        <div className="docs-h1">Threat Intelligence Feed</div>
+        <div style={{fontSize:'11px',color:'var(--muted)',marginBottom:'20px'}}>Live threat intelligence relevant to blockchain OSINT investigations. Click any item to expand.</div>
+        <div style={{display:'flex',gap:'8px',marginBottom:'18px',flexWrap:'wrap'}}>
+          {[['ALL','var(--accent)'],['HIGH','var(--danger)'],['MEDIUM','var(--warn)'],['LOW','var(--success)'],['INFO','var(--muted)']].map(([l,c])=>(
+            <span key={l} style={{fontSize:'9px',padding:'3px 10px',border:`1px solid ${c}`,color:c,cursor:'pointer',letterSpacing:'1px',transition:'all .2s'}}
+              onMouseOver={e=>e.currentTarget.style.background=`${c}20`}
+              onMouseOut={e=>e.currentTarget.style.background='transparent'}
+            >{l}</span>
+          ))}
+        </div>
+        {NEWS.map(n=>(
+          <div key={n.id} className={`news-card ${n.severity} ${expandedNews===n.id?'expanded':''}`} onClick={()=>setExpandedNews(expandedNews===n.id?null:n.id)}>
+            <div style={{display:'flex',justifyContent:'space-between',alignItems:'flex-start',gap:'12px'}}>
+              <div className="news-title">{n.title}</div>
+              <span className={`badge badge-${n.severity==='high'?'high':n.severity==='med'?'med':n.severity==='low'?'low':'unknown'}`} style={{flexShrink:0,fontSize:'8px'}}>{n.severity.toUpperCase()}</span>
+            </div>
+            <div className="news-meta">
+              <span>{n.date}</span><span>·</span><span style={{color:'var(--accent)'}}>{n.source}</span>
+              <span style={{marginLeft:'auto',fontSize:'9px',color:'var(--muted)'}}>{expandedNews===n.id?'▲ collapse':'▼ read more'}</span>
+            </div>
+            <div className="news-body">{expandedNews===n.id&&<div style={{marginTop:'10px',fontSize:'10px',color:'var(--muted)',lineHeight:'1.9'}}>{n.body}</div>}</div>
+          </div>
+        ))}
+      </>
+    )},
+    labels:{title:'Address Labels',content:(
+      <>
+        <div className="docs-h1">Address Label Database</div>
+        <div className="docs-h2">Label Categories</div>
+        {[['exchange','Exchange Hot Wallet','Direct interaction with centralized exchange deposit/withdrawal wallets. Generally low risk, but high volume may indicate wash trading.','var(--accent2)'],['mixer','Transaction Mixer','Services designed to obfuscate fund trails. Interaction with mixers is a strong risk signal. Tornado Cash is OFAC-sanctioned.','var(--danger)'],['scam','Scam / Phishing','Addresses confirmed in phishing campaigns, rug pulls, or Ponzi schemes. Highest risk category.','var(--danger)'],['donation','Donation / Foundation','Publicly known non-profit or foundation addresses. Generally safe, but can be used as legitimacy washing.','var(--success)'],['bridge','Cross-chain Bridge','Bridge protocol contracts. Funds may have originated from other chains — limits traceability.','var(--accent2)'],['unknown','Unknown','Address not found in label database. Treat as neutral pending further investigation.','var(--muted)']].map(([cat,title,desc,c])=>(
+          <div key={cat} style={{padding:'14px',border:`1px solid ${c}20`,background:`${c}06`,marginBottom:'10px'}}>
+            <div style={{display:'flex',alignItems:'center',gap:'10px',marginBottom:'6px'}}>
+              <span className={`badge badge-${cat==='exchange'?'exchange':cat==='mixer'?'mixer':cat==='scam'?'scam':cat==='donation'?'donation':cat==='bridge'?'exchange':'unknown'}`}>{cat.toUpperCase()}</span>
+              <span style={{fontSize:'12px',fontWeight:'700',color:'var(--text)'}}>{title}</span>
+            </div>
+            <div style={{fontSize:'10px',color:'var(--muted)',lineHeight:'1.9'}}>{desc}</div>
+          </div>
+        ))}
+        <div className="docs-h2">Known Labeled Addresses (Sample)</div>
+        <div className="docs-code">{Object.entries(LABELS).map(([addr,l])=>`${addr.slice(0,18)}...  →  ${l.label} [${l.category}]`).join('\n')}</div>
+        <div className="docs-alert warn">The built-in label database is a small sample for demo purposes. A production deployment would integrate Chainalysis, TRM Labs, or Elliptic APIs for comprehensive coverage.</div>
+      </>
+    )},
+    setup:{title:'Setup & Install',content:(
+      <>
+        <div className="docs-h1">Setup & Installation</div>
+        <div className="docs-alert info">ChainTrace is a prototype. It works fully offline with mock data — no API key required for demo.</div>
+        <div className="docs-h2">Requirements</div>
+        <div className="docs-code">{`Python 3.10+\nNode.js 18+\nnpm or yarn\n(Optional) Etherscan API key for live data`}</div>
+        <div className="docs-h2">Quick Start</div>
+        <div className="docs-h3">1. Clone Repository</div>
+        <div className="docs-code">git clone https://github.com/chaintrace/chaintrace-osint{'\n'}cd chaintrace-osint</div>
+        <div className="docs-h3">2. Install Backend</div>
+        <div className="docs-code">{`cd backend\npip install -r requirements.txt\nuvicorn main:app --reload --port 8000`}</div>
+        <div className="docs-h3">3. Install Frontend</div>
+        <div className="docs-code">{`cd frontend\nnpm install\nnpm run dev`}</div>
+        <div className="docs-h3">4. (Optional) Add Etherscan API Key</div>
+        <div className="docs-code">{`# backend/.env\nETHERSCAN_API_KEY=your_key_here\nUSE_MOCK_DATA=false`}</div>
+        <div className="docs-alert warn">Without an Etherscan API key, ChainTrace automatically falls back to mock/demo data. All features work in demo mode.</div>
+        <div className="docs-h2">Tech Stack</div>
+        <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:'8px',margin:'12px 0'}}>
+          {[['Frontend','React 18 + Vite + TailwindCSS'],['Graph','Cytoscape.js'],['Backend','Python FastAPI'],['Database','SQLite / JSON'],['Blockchain','Etherscan API (optional)'],['Reports','Auto-generated JSON']].map(([k,v])=>(
+            <div key={k} style={{padding:'10px 12px',background:'rgba(2,8,16,.7)',border:'1px solid rgba(0,229,255,.08)'}}>
+              <div style={{fontSize:'9px',color:'var(--muted)',marginBottom:'3px',letterSpacing:'1px'}}>{k}</div>
+              <div style={{fontSize:'10px',color:'var(--accent)'}}>{v}</div>
+            </div>
+          ))}
+        </div>
+      </>
+    )},
+  };
+
+  return(
+    <div className="docs-grid">
+      <div className="docs-nav">
+        {[['GENERAL',['overview','riskEngine']],['DEVELOPER',['api','setup']],['INTELLIGENCE',['threatIntel','labels']]].map(([section,items])=>(
+          <div key={section}>
+            <div className="docs-nav-section">{section}</div>
+            {items.map(id=>(
+              <div key={id} className={`docs-nav-item${activeSection===id?' active':''}`} onClick={()=>setActiveSection(id)}>
+                <span style={{opacity:.5}}>◈</span>{SECTIONS[id].title}
+              </div>
+            ))}
+          </div>
+        ))}
+      </div>
+      <div className="docs-content fade-in">
+        {SECTIONS[activeSection]?.content}
+      </div>
+    </div>
+  );
+}
+
+function App(){
+  const [page,setPage]=useState('home');
+  return(
+    <div className="app">
+      <Navbar page={page} setPage={setPage}/>
+      {page==='home'&&<HomePage setPage={setPage}/>}
+      {page==='dashboard'&&<Dashboard/>}
+      {page==='docs'&&<DocsPage/>}
+    </div>
+  );
+}
+ReactDOM.createRoot(document.getElementById('root')).render(<App/>);
+</script>
+</body>
+</html>
